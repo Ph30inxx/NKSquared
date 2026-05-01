@@ -42,6 +42,21 @@ docker compose run --rm api alembic revision --autogenerate -m "msg"
 docker compose logs -f api
 ```
 
+## Bootstrap admin & log in (Sprint 1)
+
+The platform uses an admin-invite flow — there is no public sign-up. After
+bringing the stack up, apply migrations and create the first admin:
+
+```bash
+docker compose run --rm api alembic upgrade head
+docker compose run --rm api python -m app.cli create-admin \
+    --email admin@nksquared.com --password changeme --name "Admin"
+```
+
+Then visit http://localhost:5173, sign in with those credentials, and you'll
+land on an empty dashboard. Authenticated admins can invite further users by
+POST'ing to `/api/v1/users` with a bearer token.
+
 ## Project layout
 
 ```
