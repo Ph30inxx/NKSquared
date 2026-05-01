@@ -2,8 +2,10 @@ import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import AddIcon from "@mui/icons-material/Add";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
+import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import DeleteIcon from "@mui/icons-material/Delete";
 import EditIcon from "@mui/icons-material/Edit";
+import RefreshIcon from "@mui/icons-material/Refresh";
 import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
@@ -24,14 +26,26 @@ import Typography from "@mui/material/Typography";
 
 import {
   Transaction,
+  Valuation,
   useCompany,
   useCompanyTransactions,
+  useCompanyValuations,
   useDeleteTransaction,
+  useDeleteValuation,
+  useMarkCurrent,
+  useRecomputeFx,
   useSoftDeleteCompany,
 } from "../../api/companies";
-import { formatCr, formatDate, formatMoic, moicColor } from "../../utils/format";
+import {
+  formatCr,
+  formatDate,
+  formatMoic,
+  formatPct,
+  moicColor,
+} from "../../utils/format";
 import CompanyFormDialog from "./CompanyFormDialog";
 import TransactionFormDialog from "./TransactionFormDialog";
+import ValuationFormDialog from "./ValuationFormDialog";
 
 const NEGATIVE_TYPES = new Set(["Investment", "Follow_on"]);
 const POSITIVE_TYPES = new Set(["Partial_exit", "Full_exit", "Distribution"]);
@@ -76,12 +90,19 @@ export default function CompanyDetailPage() {
 
   const company = useCompany(companyId);
   const txns = useCompanyTransactions(companyId);
+  const vals = useCompanyValuations(companyId);
   const softDelete = useSoftDeleteCompany();
   const deleteTxn = useDeleteTransaction(companyId ?? 0);
+  const deleteValuation = useDeleteValuation(companyId ?? 0);
+  const markCurrent = useMarkCurrent(companyId ?? 0);
+  const recomputeFx = useRecomputeFx(companyId ?? 0);
 
   const [editOpen, setEditOpen] = useState(false);
   const [txnDialogOpen, setTxnDialogOpen] = useState(false);
   const [editingTxn, setEditingTxn] = useState<Transaction | null>(null);
+  const [valDialogOpen, setValDialogOpen] = useState(false);
+  const [recomputeMessage, setRecomputeMessage] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   if (companyId == null) {
     return <Alert severity="error">Missing company id.</Alert>;
@@ -112,6 +133,37 @@ export default function CompanyDetailPage() {
     await deleteTxn.mutateAsync(txn.id);
   }
 
+  async function handleDeleteValuation(v: Valuation) {
+    if (!confirm("Delete this valuation?")) return;
+    await deleteValuation.mutateAsync(v.id);
+  }
+
+  async function handleMarkCurrent(v: Valuation) {
+    setActionError(null);
+    try {
+      await markCurrent.mutateAsync(v.id);
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: unknown } } })?.response?.data
+        ?.detail;
+      setActionError(typeof detail === "string" ? detail : "Mark-current failed");
+    }
+  }
+
+  async function handleRecomputeFx() {
+    setActionError(null);
+    setRecomputeMessage(null);
+    try {
+      const res = await recomputeFx.mutateAsync();
+      setRecomputeMessage(
+        `Updated ${res.updated} transaction(s); ${res.still_unresolved} still without an FX rate.`,
+      );
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: unknown } } })?.response?.data
+        ?.detail;
+      setActionError(typeof detail === "string" ? detail : "Recompute failed");
+    }
+  }
+
   return (
     <Stack spacing={3}>
       <Stack direction="row" spacing={1} alignItems="center">
@@ -135,6 +187,8 @@ export default function CompanyDetailPage() {
           Delete
         </Button>
       </Stack>
+
+      {actionError && <Alert severity="error">{actionError}</Alert>}
 
       <Paper sx={{ p: 3 }}>
         <Grid container spacing={3}>
@@ -171,29 +225,39 @@ export default function CompanyDetailPage() {
       </Paper>
 
       <Paper sx={{ p: 3 }}>
-        <Typography variant="h6" gutterBottom>
-          MOIC
-        </Typography>
+        <Stack direction="row" justifyContent="space-between" alignItems="center" mb={1}>
+          <Typography variant="h6">Performance</Typography>
+          {summary.skipped.length > 0 && (
+            <Button
+              startIcon={<RefreshIcon />}
+              onClick={handleRecomputeFx}
+              disabled={recomputeFx.isPending}
+              size="small"
+            >
+              {recomputeFx.isPending ? "Recomputing…" : "Recompute FX rates"}
+            </Button>
+          )}
+        </Stack>
         <Grid container spacing={3}>
-          <Grid item xs={6} sm={3}>
+          <Grid item xs={6} sm={2.4}>
             <Typography variant="caption" color="text.secondary">
               Invested (₹Cr)
             </Typography>
             <Typography variant="h5">{formatCr(summary.invested)}</Typography>
           </Grid>
-          <Grid item xs={6} sm={3}>
+          <Grid item xs={6} sm={2.4}>
             <Typography variant="caption" color="text.secondary">
               Realized (₹Cr)
             </Typography>
             <Typography variant="h5">{formatCr(summary.realized)}</Typography>
           </Grid>
-          <Grid item xs={6} sm={3}>
+          <Grid item xs={6} sm={2.4}>
             <Typography variant="caption" color="text.secondary">
               Current (₹Cr)
             </Typography>
             <Typography variant="h5">{formatCr(c.current_value_cr)}</Typography>
           </Grid>
-          <Grid item xs={6} sm={3}>
+          <Grid item xs={6} sm={2.4}>
             <Typography variant="caption" color="text.secondary">
               MOIC
             </Typography>
@@ -201,22 +265,101 @@ export default function CompanyDetailPage() {
               {formatMoic(c.moic)}
             </Typography>
           </Grid>
+          <Grid item xs={6} sm={2.4}>
+            <Typography variant="caption" color="text.secondary">
+              IRR
+            </Typography>
+            <Typography variant="h5">{formatPct(c.irr)}</Typography>
+          </Grid>
         </Grid>
-        {summary.skipped.length > 0 && (
+        {recomputeMessage && (
+          <Alert severity="info" sx={{ mt: 2 }} onClose={() => setRecomputeMessage(null)}>
+            {recomputeMessage}
+          </Alert>
+        )}
+        {summary.skipped.length > 0 && !recomputeMessage && (
           <Alert severity="info" sx={{ mt: 2 }}>
             {summary.skipped.length} transaction(s) skipped from MOIC because they have no INR
-            amount yet (non-INR with no FX rate). Sprint 3 will resolve these automatically.
+            amount yet (non-INR with no FX rate). Add a rate via the FX rates page, then click
+            <strong> Recompute FX rates </strong> above.
           </Alert>
         )}
       </Paper>
 
       <Paper>
-        <Stack
-          direction="row"
-          justifyContent="space-between"
-          alignItems="center"
-          sx={{ p: 2 }}
-        >
+        <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ p: 2 }}>
+          <Typography variant="h6">Valuations</Typography>
+          <Button
+            variant="contained"
+            startIcon={<AddIcon />}
+            onClick={() => setValDialogOpen(true)}
+          >
+            Add valuation
+          </Button>
+        </Stack>
+        {vals.isLoading ? (
+          <Box display="flex" justifyContent="center" p={4}>
+            <CircularProgress />
+          </Box>
+        ) : (
+          <TableContainer>
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell>Date</TableCell>
+                  <TableCell>Source</TableCell>
+                  <TableCell align="right">Post-money</TableCell>
+                  <TableCell align="right">Pre-money</TableCell>
+                  <TableCell>Currency</TableCell>
+                  <TableCell>Notes</TableCell>
+                  <TableCell align="right" />
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {vals.data?.map((v) => (
+                  <TableRow key={v.id}>
+                    <TableCell>{formatDate(v.valuation_date)}</TableCell>
+                    <TableCell>{v.source ?? "—"}</TableCell>
+                    <TableCell align="right">{formatCr(v.post_money_valuation_cr)}</TableCell>
+                    <TableCell align="right">{formatCr(v.pre_money_valuation_cr)}</TableCell>
+                    <TableCell>{v.currency}</TableCell>
+                    <TableCell>{v.notes ?? ""}</TableCell>
+                    <TableCell align="right">
+                      <Tooltip title="Use this as current value (pro-rata)">
+                        <span>
+                          <IconButton
+                            size="small"
+                            color="primary"
+                            onClick={() => handleMarkCurrent(v)}
+                            disabled={markCurrent.isPending}
+                          >
+                            <CheckCircleIcon fontSize="small" />
+                          </IconButton>
+                        </span>
+                      </Tooltip>
+                      <IconButton size="small" onClick={() => handleDeleteValuation(v)}>
+                        <DeleteIcon fontSize="small" />
+                      </IconButton>
+                    </TableCell>
+                  </TableRow>
+                ))}
+                {vals.data && vals.data.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={7}>
+                      <Box py={3} textAlign="center" color="text.secondary">
+                        No valuations recorded. Click <strong>Add valuation</strong> above.
+                      </Box>
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        )}
+      </Paper>
+
+      <Paper>
+        <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ p: 2 }}>
           <Typography variant="h6">Transactions</Typography>
           <Button
             variant="contained"
@@ -311,6 +454,12 @@ export default function CompanyDetailPage() {
           setEditingTxn(null);
         }}
         initial={editingTxn}
+      />
+
+      <ValuationFormDialog
+        companyId={c.id}
+        open={valDialogOpen}
+        onClose={() => setValDialogOpen(false)}
       />
     </Stack>
   );

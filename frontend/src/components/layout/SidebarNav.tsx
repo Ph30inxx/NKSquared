@@ -1,26 +1,38 @@
 import { NavLink } from "react-router-dom";
 import DashboardIcon from "@mui/icons-material/Dashboard";
 import BusinessCenterIcon from "@mui/icons-material/BusinessCenter";
+import CurrencyExchangeIcon from "@mui/icons-material/CurrencyExchange";
 import List from "@mui/material/List";
 import ListItemButton from "@mui/material/ListItemButton";
 import ListItemIcon from "@mui/material/ListItemIcon";
 import ListItemText from "@mui/material/ListItemText";
 
+import { useAuthStore } from "../../stores/auth";
+
 interface NavItem {
   to: string;
   label: string;
   icon: React.ReactNode;
+  adminOnly?: boolean;
 }
 
 const NAV_ITEMS: NavItem[] = [
   { to: "/", label: "Dashboard", icon: <DashboardIcon /> },
   { to: "/portfolio", label: "Portfolio", icon: <BusinessCenterIcon /> },
+  {
+    to: "/admin/forex-rates",
+    label: "FX rates",
+    icon: <CurrencyExchangeIcon />,
+    adminOnly: true,
+  },
 ];
 
 export default function SidebarNav() {
+  const role = useAuthStore((s) => s.user?.role);
+
   return (
     <List>
-      {NAV_ITEMS.map((item) => (
+      {NAV_ITEMS.filter((item) => !item.adminOnly || role === "ADMIN").map((item) => (
         <ListItemButton
           key={item.to}
           component={NavLink}

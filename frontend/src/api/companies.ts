@@ -152,6 +152,42 @@ export interface CompanyListParams {
   include_inactive?: boolean;
 }
 
+export const VALUATION_SOURCES = [
+  "SSA",
+  "409A",
+  "Internal",
+  "Secondary",
+  "Audit",
+] as const;
+export type ValuationSource = (typeof VALUATION_SOURCES)[number];
+
+export interface Valuation {
+  id: number;
+  company_id: number;
+  valuation_date: string;
+  post_money_valuation_cr: string;
+  pre_money_valuation_cr: string | null;
+  currency: string;
+  source: string | null;
+  notes: string | null;
+  created_by: number | null;
+  created_at: string;
+}
+
+export interface ValuationWritePayload {
+  valuation_date: string;
+  post_money_valuation_cr: string | number;
+  pre_money_valuation_cr?: string | number | null;
+  currency?: string;
+  source?: string | null;
+  notes?: string | null;
+}
+
+export interface RecomputeFxResponse {
+  updated: number;
+  still_unresolved: number;
+}
+
 // ─── Raw API ──────────────────────────────────────────────────────────────────
 
 export async function listCompanies(params: CompanyListParams = {}): Promise<PaginatedCompanies> {
@@ -206,12 +242,53 @@ export async function deleteTransaction(id: number): Promise<void> {
   await api.delete(`/transactions/${id}`);
 }
 
+export async function listCompanyValuations(companyId: number): Promise<Valuation[]> {
+  const { data } = await api.get<Valuation[]>(`/companies/${companyId}/valuations`);
+  return data;
+}
+
+export async function createValuation(
+  companyId: number,
+  payload: ValuationWritePayload,
+): Promise<Valuation> {
+  const { data } = await api.post<Valuation>(`/companies/${companyId}/valuations`, payload);
+  return data;
+}
+
+export async function updateValuation(
+  id: number,
+  payload: Partial<ValuationWritePayload>,
+): Promise<Valuation> {
+  const { data } = await api.patch<Valuation>(`/valuations/${id}`, payload);
+  return data;
+}
+
+export async function deleteValuation(id: number): Promise<void> {
+  await api.delete(`/valuations/${id}`);
+}
+
+export async function markValuationCurrent(
+  companyId: number,
+  valuationId: number,
+): Promise<CompanyDetail> {
+  const { data } = await api.post<CompanyDetail>(`/companies/${companyId}/mark-current`, {
+    valuation_id: valuationId,
+  });
+  return data;
+}
+
+export async function recomputeFx(companyId: number): Promise<RecomputeFxResponse> {
+  const { data } = await api.post<RecomputeFxResponse>(`/companies/${companyId}/recompute-fx`);
+  return data;
+}
+
 // ─── React Query hooks ────────────────────────────────────────────────────────
 
 const KEYS = {
   list: (params: CompanyListParams) => ["companies", "list", params] as const,
   detail: (id: number) => ["companies", "detail", id] as const,
   transactions: (companyId: number) => ["companies", companyId, "transactions"] as const,
+  valuations: (companyId: number) => ["companies", companyId, "valuations"] as const,
 };
 
 export function useCompanies(params: CompanyListParams = {}) {
@@ -299,6 +376,57 @@ export function useDeleteTransaction(companyId: number) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: KEYS.transactions(companyId) });
       qc.invalidateQueries({ queryKey: KEYS.detail(companyId) });
+      qc.invalidateQueries({ queryKey: ["companies", "list"] });
+    },
+  });
+}
+
+export function useCompanyValuations(companyId: number | null) {
+  return useQuery({
+    queryKey:
+      companyId == null
+        ? ["companies", "none", "valuations"]
+        : KEYS.valuations(companyId),
+    queryFn: () => listCompanyValuations(companyId as number),
+    enabled: companyId != null,
+  });
+}
+
+export function useCreateValuation(companyId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: ValuationWritePayload) => createValuation(companyId, payload),
+    onSuccess: () => qc.invalidateQueries({ queryKey: KEYS.valuations(companyId) }),
+  });
+}
+
+export function useDeleteValuation(companyId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: deleteValuation,
+    onSuccess: () => qc.invalidateQueries({ queryKey: KEYS.valuations(companyId) }),
+  });
+}
+
+export function useMarkCurrent(companyId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (valuationId: number) => markValuationCurrent(companyId, valuationId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: KEYS.detail(companyId) });
+      qc.invalidateQueries({ queryKey: KEYS.valuations(companyId) });
+      qc.invalidateQueries({ queryKey: ["companies", "list"] });
+    },
+  });
+}
+
+export function useRecomputeFx(companyId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => recomputeFx(companyId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: KEYS.detail(companyId) });
+      qc.invalidateQueries({ queryKey: KEYS.transactions(companyId) });
       qc.invalidateQueries({ queryKey: ["companies", "list"] });
     },
   });

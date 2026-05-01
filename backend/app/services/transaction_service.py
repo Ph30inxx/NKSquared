@@ -1,3 +1,4 @@
+from datetime import date
 from decimal import Decimal
 
 from sqlalchemy.orm import Session
@@ -10,8 +11,9 @@ from app.schemas.transaction import (
     TransactionCreate,
     TransactionUpdate,
 )
+from app.services import fx_service
 from app.services.audit_service import record_audit
-from app.services.moic_service import recompute_company_moic
+from app.services.metrics_service import recompute_company_metrics
 
 _AUDIT_ENTITY = "portfolio_transaction"
 _ZERO = Decimal("0")
@@ -29,20 +31,31 @@ def _signed_amount(magnitude: Decimal, transaction_type: str) -> Decimal:
 
 
 def _resolve_inr(
-    *, amount: Decimal, currency: str, fx_rate_used: Decimal | None
+    db: Session,
+    *,
+    amount: Decimal,
+    currency: str,
+    fx_rate_used: Decimal | None,
+    transaction_date: date,
 ) -> tuple[Decimal | None, Decimal | None]:
     """
     Returns (amount_inr_cr_magnitude, fx_rate_to_persist).
 
-    INR amounts are 1:1; non-INR needs an explicit fx rate (Sprint 3 will load these
-    automatically). When no rate is provided for a non-INR transaction we leave both
-    fields NULL — MOIC will skip the row until the rate is supplied.
+    Resolution order:
+      1. INR → 1:1.
+      2. Caller-supplied fx_rate_used wins (covers ad-hoc overrides).
+      3. Auto-look-up against forex_rates for transaction_date (Sprint 3).
+      4. No rate available → leave both fields NULL; MOIC/XIRR skip the row
+         until a rate is added and POST /companies/{id}/recompute-fx is hit.
     """
     if currency.upper() == "INR":
         return amount, Decimal("1")
-    if fx_rate_used is None:
+    if fx_rate_used is not None:
+        return amount * fx_rate_used, fx_rate_used
+    looked_up = fx_service.get_fx_rate(db, currency, "INR", transaction_date)
+    if looked_up is None:
         return None, None
-    return amount * fx_rate_used, fx_rate_used
+    return amount * looked_up, looked_up
 
 
 def create_transaction(
@@ -51,7 +64,11 @@ def create_transaction(
     magnitude = payload.amount
     signed = _signed_amount(magnitude, payload.transaction_type)
     inr_magnitude, fx_rate = _resolve_inr(
-        amount=magnitude, currency=payload.currency, fx_rate_used=payload.fx_rate_used
+        db,
+        amount=magnitude,
+        currency=payload.currency,
+        fx_rate_used=payload.fx_rate_used,
+        transaction_date=payload.transaction_date,
     )
     amount_inr_cr = (
         None
@@ -95,7 +112,7 @@ def create_transaction(
         action="CREATE",
         new_value=f"{payload.transaction_type} {magnitude} {payload.currency.upper()}",
     )
-    recompute_company_moic(db, company_id)
+    recompute_company_metrics(db, company_id)
     db.commit()
     db.refresh(txn)
     return txn
@@ -157,7 +174,11 @@ def update_transaction(
         txn.amount_cr = _signed_amount(new_magnitude, new_type)
 
         inr_magnitude, fx_rate = _resolve_inr(
-            amount=new_magnitude, currency=new_currency, fx_rate_used=new_fx
+            db,
+            amount=new_magnitude,
+            currency=new_currency,
+            fx_rate_used=new_fx,
+            transaction_date=txn.transaction_date,
         )
         if inr_magnitude is None:
             txn.amount_inr_cr = None
@@ -185,7 +206,7 @@ def update_transaction(
         )
 
     db.flush()
-    recompute_company_moic(db, txn.company_id)
+    recompute_company_metrics(db, txn.company_id)
     db.commit()
     db.refresh(txn)
     return txn
@@ -204,6 +225,49 @@ def delete_transaction(db: Session, txn: PortfolioTransaction, *, user_id: int) 
     )
     db.delete(txn)
     db.flush()
-    recompute_company_moic(db, company_id)
+    recompute_company_metrics(db, company_id)
     db.commit()
     return company_id
+
+
+def recompute_company_fx(db: Session, *, company_id: int) -> tuple[int, int]:
+    """
+    Re-resolve `amount_inr_cr` for any transactions on this company that are
+    currently NULL by looking up the forex_rates table. Returns (updated, still_unresolved).
+    Caller is left to commit.
+    """
+    from sqlalchemy import select
+
+    rows = (
+        db.execute(
+            select(PortfolioTransaction).where(
+                PortfolioTransaction.company_id == company_id,
+                PortfolioTransaction.amount_inr_cr.is_(None),
+            )
+        )
+        .scalars()
+        .all()
+    )
+    updated = 0
+    still_unresolved = 0
+    for txn in rows:
+        magnitude = txn.original_amount or abs(txn.amount_cr)
+        rate = fx_service.get_fx_rate(
+            db, txn.original_currency, "INR", txn.transaction_date
+        )
+        if rate is None:
+            still_unresolved += 1
+            continue
+        inr_magnitude = magnitude * rate
+        if txn.transaction_type in NEGATIVE_TYPES:
+            txn.amount_inr_cr = -inr_magnitude
+        elif txn.transaction_type in POSITIVE_TYPES:
+            txn.amount_inr_cr = inr_magnitude
+        else:
+            txn.amount_inr_cr = _ZERO
+        txn.fx_rate_used = rate
+        updated += 1
+    if updated:
+        db.flush()
+        recompute_company_metrics(db, company_id)
+    return updated, still_unresolved

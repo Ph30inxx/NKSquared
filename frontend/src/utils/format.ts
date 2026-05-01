@@ -24,6 +24,14 @@ export function formatDate(value: string | null | undefined): string {
   return d.toLocaleDateString("en-IN", { year: "numeric", month: "short", day: "numeric" });
 }
 
+/** Format a fractional rate (0.183 → "18.3%"). */
+export function formatPct(value: string | number | null | undefined): string {
+  if (value == null || value === "") return "—";
+  const num = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(num)) return "—";
+  return `${(num * 100).toFixed(1)}%`;
+}
+
 export function moicColor(value: string | number | null | undefined): string | undefined {
   if (value == null || value === "") return undefined;
   const num = typeof value === "number" ? value : Number(value);

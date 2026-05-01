@@ -89,10 +89,9 @@ export default function TransactionFormDialog({
       setError("Amount is required");
       return;
     }
-    if (form.currency.toUpperCase() !== "INR" && !form.fx_rate_used) {
-      setError("FX rate is required for non-INR transactions (Sprint 3 will load these automatically).");
-      return;
-    }
+    // Non-INR no longer requires a manual rate — the backend looks one up from forex_rates.
+    // If no rate is found, the row is saved with amount_inr_cr=null and the analyst can
+    // resolve it later via "Recompute FX rates" on the company detail page.
     const payload: TransactionWritePayload = {
       transaction_date: form.transaction_date,
       transaction_type: form.transaction_type,
@@ -186,7 +185,9 @@ export default function TransactionFormDialog({
                 onChange={(e) => update("fx_rate_used", e.target.value)}
                 inputProps={{ step: "0.000001", min: "0" }}
                 disabled={!isNonInr}
-                helperText={isNonInr ? "to INR" : "INR is 1:1"}
+                helperText={
+                  isNonInr ? "Leave blank to look up daily rate" : "INR is 1:1"
+                }
                 fullWidth
               />
             </Grid>

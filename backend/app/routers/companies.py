@@ -7,6 +7,7 @@ from app.db.session import get_db
 from app.models.company import PortfolioCompany
 from app.models.transaction import PortfolioTransaction
 from app.models.user import User
+from app.models.valuation import Valuation
 from app.schemas.company import (
     CompanyCreate,
     CompanyListItem,
@@ -15,7 +16,13 @@ from app.schemas.company import (
     PaginatedCompanies,
 )
 from app.schemas.transaction import TransactionCreate, TransactionResponse
-from app.services import company_service, transaction_service
+from app.schemas.valuation import (
+    MarkCurrentRequest,
+    ValuationCreate,
+    ValuationResponse,
+)
+from app.services import company_service, transaction_service, valuation_service
+from pydantic import BaseModel
 
 router = APIRouter(prefix="/companies", tags=["companies"])
 
@@ -147,3 +154,78 @@ def create_company_transaction(
     return transaction_service.create_transaction(
         db, company_id=company_id, payload=payload, user_id=user.id
     )
+
+
+# ─── Valuations ────────────────────────────────────────────────────────────────
+
+
+@router.get("/{company_id}/valuations", response_model=list[ValuationResponse])
+def list_company_valuations(
+    company_id: int,
+    db: Session = Depends(get_db),
+    _user: User = Depends(get_current_user),
+) -> list[Valuation]:
+    _get_company_or_404(db, company_id)
+    return list(
+        db.execute(
+            select(Valuation)
+            .where(Valuation.company_id == company_id)
+            .order_by(Valuation.valuation_date.desc(), Valuation.id.desc())
+        )
+        .scalars()
+        .all()
+    )
+
+
+@router.post(
+    "/{company_id}/valuations",
+    response_model=ValuationResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_company_valuation(
+    company_id: int,
+    payload: ValuationCreate,
+    db: Session = Depends(get_db),
+    user: User = Depends(_writer),
+) -> Valuation:
+    _get_company_or_404(db, company_id)
+    return valuation_service.create_valuation(
+        db, company_id=company_id, payload=payload, user_id=user.id
+    )
+
+
+@router.post("/{company_id}/mark-current", response_model=CompanyResponse)
+def mark_current(
+    company_id: int,
+    payload: MarkCurrentRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(_writer),
+) -> PortfolioCompany:
+    company = _get_company_or_404(db, company_id)
+    valuation = db.get(Valuation, payload.valuation_id)
+    if valuation is None:
+        raise HTTPException(status_code=404, detail="Valuation not found")
+    try:
+        return valuation_service.mark_current(db, company, valuation, user_id=user.id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+# ─── FX recompute ──────────────────────────────────────────────────────────────
+
+
+class RecomputeFxResponse(BaseModel):
+    updated: int
+    still_unresolved: int
+
+
+@router.post("/{company_id}/recompute-fx", response_model=RecomputeFxResponse)
+def recompute_fx(
+    company_id: int,
+    db: Session = Depends(get_db),
+    _user: User = Depends(_writer),
+) -> RecomputeFxResponse:
+    _get_company_or_404(db, company_id)
+    updated, still = transaction_service.recompute_company_fx(db, company_id=company_id)
+    db.commit()
+    return RecomputeFxResponse(updated=updated, still_unresolved=still)

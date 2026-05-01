@@ -73,6 +73,28 @@ Backend tests for the MOIC engine:
 docker compose run --rm api pytest app/tests -q
 ```
 
+## Try it: multi-currency, valuations, IRR (Sprint 3)
+
+The Sprint 3 migration seeds two years of monthly USD/AED/EUR → INR rates so the
+demo doesn't depend on an external feed. Picking up where Sprint 2 left off:
+
+1. **Add a USD transaction** without filling the FX rate field (e.g. `Investment`,
+   USD 10, last quarter). The backend looks up the daily rate from `forex_rates`
+   and the row's INR amount populates automatically.
+2. **Add a transaction in an un-seeded currency** (e.g. AUD). The INR cell
+   shows `—` and the Performance card surfaces a "Recompute FX rates" button.
+3. As an **admin**, open **FX rates** in the sidebar → **Add rate** for that
+   currency → return to the company → click **Recompute FX rates**. The row
+   joins MOIC, IRR refreshes.
+4. **Add a valuation** (e.g. post-money ₹2000 Cr). Set `shareholding_pct` on at
+   least one transaction first, then click the green check on the valuation row
+   to **Mark current**. `current_value_cr` updates pro-rata
+   (`post_money × latest_shareholding_pct`). MOIC and IRR refresh.
+
+Daily FX loader is wired to Celery Beat as a stub
+(`app.tasks.fx_loader.fetch_daily_rates`); it logs a TODO until a real provider
+is wired up. The doc anticipates this with `FX_PROVIDER='manual'` (§ 8.3).
+
 ## Project layout
 
 ```
