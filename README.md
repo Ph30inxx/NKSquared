@@ -57,6 +57,22 @@ Then visit http://localhost:5173, sign in with those credentials, and you'll
 land on an empty dashboard. Authenticated admins can invite further users by
 POST'ing to `/api/v1/users` with a bearer token.
 
+## Try it: portfolio + MOIC (Sprint 2)
+
+Once logged in, click **Portfolio** in the sidebar:
+
+1. **New company** → name it "Acme", set Vehicle = `Strategic_Equity`, Asset class
+   = `Direct_Equity`, Status = `Active`, Currency = `INR`, Current value (₹Cr) = `120`.
+2. Open the company → **Add transaction** → `Investment`, ₹100 Cr, today's date.
+3. **Add transaction** → `Partial_exit`, ₹30 Cr, today's date.
+4. The MOIC card now reads **1.50x** — i.e. `(120 + 30) / 100`.
+
+Backend tests for the MOIC engine:
+
+```bash
+docker compose run --rm api pytest app/tests -q
+```
+
 ## Project layout
 
 ```
