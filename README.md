@@ -95,6 +95,19 @@ Daily FX loader is wired to Celery Beat as a stub
 (`app.tasks.fx_loader.fetch_daily_rates`); it logs a TODO until a real provider
 is wired up. The doc anticipates this with `FX_PROVIDER='manual'` (§ 8.3).
 
+## Try it: Excel grid (Sprint 4)
+
+Sidebar → **Grid** opens an AG Grid Community view of every active company.
+
+- Edit `Company`, `Sector`, `Vehicle`, `Status`, `Country`, `First invest`, or
+  `Current (₹Cr)` directly inline. Tab away to commit; a Saved snackbar pops.
+  `Invested`, `MOIC`, and `IRR` refresh from the server response.
+- Computed columns (Invested / MOIC / IRR) are read-only.
+- `Ctrl+C` / `Ctrl+V` work for clipboard interop with Excel. Range-select a
+  block and drag the fill handle to propagate values (AG Grid v31 Community).
+- A failed save (e.g. an invalid enum) reverts the cell and surfaces the
+  validation message.
+
 ## Project layout
 
 ```

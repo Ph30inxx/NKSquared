@@ -53,22 +53,22 @@ export interface CompanyListItem {
   portfolio_type: string | null;
   investment_status: string | null;
   portfolio_status: string | null;
+  asset_class: string | null;
   sector: string | null;
+  sub_sector: string | null;
+  country: string | null;
+  date_of_first_investment: string | null;
   investment_value_cr: string | null;
   current_value_cr: string | null;
   moic: string | null;
+  irr: string | null;
+  currency: string;
+  notes: string | null;
   is_active: boolean;
 }
 
 export interface CompanyDetail extends CompanyListItem {
-  asset_class: string | null;
-  sub_sector: string | null;
-  country: string | null;
-  date_of_first_investment: string | null;
-  irr: string | null;
-  currency: string;
   reporting_frequency: string;
-  notes: string | null;
   created_at: string;
   updated_at: string;
 }
