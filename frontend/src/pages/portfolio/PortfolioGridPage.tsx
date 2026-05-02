@@ -8,7 +8,7 @@ import type {
   ValueFormatterParams,
 } from "ag-grid-community";
 import "ag-grid-community/styles/ag-grid.css";
-import "ag-grid-community/styles/ag-theme-quartz.css";
+import "ag-grid-community/styles/ag-theme-alpine.css";
 import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import CircularProgress from "@mui/material/CircularProgress";
@@ -194,8 +194,8 @@ export default function PortfolioGridPage() {
 
   const gridOptions = useMemo<GridOptions<GridRow>>(
     () => ({
-      enableRangeSelection: true,
-      enableFillHandle: true,
+      // enableRangeSelection / enableFillHandle are AG Grid Enterprise — omitted on Community.
+      // Single-cell Ctrl/⌘+C / Ctrl/⌘+V clipboard interop with Excel still works.
       copyHeadersToClipboard: true,
       undoRedoCellEditing: true,
       undoRedoCellEditingLimit: 50,
@@ -205,6 +205,8 @@ export default function PortfolioGridPage() {
       paginationPageSize: 50,
       defaultColDef: { sortable: true, filter: true, resizable: true },
       animateRows: true,
+      singleClickEdit: false, // double-click to edit, like Excel
+      stopEditingWhenCellsLoseFocus: true,
     }),
     [],
   );
@@ -258,7 +260,8 @@ export default function PortfolioGridPage() {
           Portfolio grid
         </Typography>
         <Typography variant="body2" color="text.secondary">
-          Edit cells inline. Computed fields (Invested, MOIC, IRR) refresh after each save.
+          Double-click a cell to edit. Ctrl/⌘+C / Ctrl/⌘+V interop with Excel.
+          Computed columns (Invested, MOIC, IRR) refresh after each save.
         </Typography>
       </Stack>
 
@@ -269,9 +272,24 @@ export default function PortfolioGridPage() {
           <CircularProgress />
         </Box>
       ) : (
-        <Box
-          className="ag-theme-quartz"
-          sx={{ height: "75vh", width: "100%" }}
+        <div
+          className="ag-theme-alpine"
+          style={
+            {
+              height: "calc(100vh - 200px)",
+              width: "100%",
+              minHeight: 480,
+              // Alpine paints horizontal row borders by default but leaves columns
+              // unseparated; these CSS vars draw vertical borders between every
+              // body cell and put a divider line between every header cell so
+              // the page reads as an actual spreadsheet.
+              "--ag-cell-horizontal-border": "solid 1px var(--ag-border-color)",
+              "--ag-header-column-separator-display": "block",
+              "--ag-header-column-separator-color": "var(--ag-border-color)",
+              "--ag-header-column-separator-width": "1px",
+              "--ag-header-column-separator-height": "100%",
+            } as React.CSSProperties
+          }
         >
           <AgGridReact<GridRow>
             ref={gridRef}
@@ -282,7 +300,7 @@ export default function PortfolioGridPage() {
             onCellValueChanged={onCellValueChanged}
             onGridReady={onGridReady}
           />
-        </Box>
+        </div>
       )}
 
       <Snackbar

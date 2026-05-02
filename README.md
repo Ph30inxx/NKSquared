@@ -108,6 +108,42 @@ Sidebar → **Grid** opens an AG Grid Community view of every active company.
 - A failed save (e.g. an invalid enum) reverts the cell and surfaces the
   validation message.
 
+## Load the sample portfolio
+
+The `samples/` directory is mounted read-only into the api container at
+`/samples`. To wipe the demo rows and ingest every sample workbook:
+
+```bash
+docker compose run --rm api python -m app.cli load-samples
+```
+
+Expected output (counts vary slightly with sheet edits):
+
+```
+parsed 50 companies
+parsed 36 monthly + 12 bu rows  (Company_01 MIS)
+parsed 12 monthly + 117 bu rows (Company_02 MIS)
+wiped N existing rows
+loaded 50 companies, 75 transactions, 35 valuations, 2 MIS submissions, 48 mis_monthly + 129 mis_bu rows
+```
+
+After running:
+
+- `/portfolio` and `/grid` show all 50 companies. `Company_04` (multi-tranche)
+  has MOIC ≈ 1.43x and IRR ≈ 35%, matching the source spreadsheet.
+- Realised companies (`Company_60` IPO, `Company_29D` matured) are loaded
+  with their historical investment tranches; their `investment_status`
+  reflects the exit. No synthetic exit cash flow is fabricated — add one
+  manually once you have the actual proceeds.
+- Two `mis_submissions` are inserted: `Company_01` (canonical doc § 3.3
+  layout — full P&L, geographies, BUs) and `Company_02` (non-standard layout,
+  monthly revenue + per-BU revenue only — the rest is left NULL until
+  Sprint 5's template builder lifts it).
+
+Use `--no-reset` to append to existing rows; default `--reset` truncates
+portfolio + MIS tables first. Forex rates, users, and audit_log are
+preserved across runs.
+
 ## Project layout
 
 ```
