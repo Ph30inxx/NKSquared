@@ -17,6 +17,11 @@ export default defineConfig(({ mode }) => {
           target: apiTarget,
           changeOrigin: true,
         },
+        "/chat-api": {
+          target: env.VITE_CHATBOT_URL || "http://chatbot:8001",
+          changeOrigin: true,
+          rewrite: (path) => path.replace(/^\/chat-api/, ""),
+        },
       },
     },
   };

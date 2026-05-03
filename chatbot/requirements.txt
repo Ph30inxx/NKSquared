@@ -1,0 +1,22 @@
+# ── Agno agentic framework ────────────────────────────────────────────────────
+agno==2.6.4
+openai==2.33.0
+
+# ── Database ──────────────────────────────────────────────────────────────────
+psycopg2-binary==2.9.10         # sync driver for custom tools and Agno storage
+psycopg[binary]==3.2.3          # psycopg v3, shared with platform backend
+sqlalchemy==2.0.36              # required by Agno v2 db modules
+
+# ── Financial calculations ────────────────────────────────────────────────────
+pyxirr==0.10.6                  # same version as platform backend
+
+# ── Date utilities ────────────────────────────────────────────────────────────
+python-dateutil==2.9.0.post0
+
+# ── API server ────────────────────────────────────────────────────────────────
+fastapi==0.115.6                # same as platform backend
+uvicorn[standard]==0.32.1       # same as platform backend
+
+# ── Config / validation ───────────────────────────────────────────────────────
+python-dotenv==1.0.1            # same as platform backend
+pydantic==2.10.3                # same as platform backend

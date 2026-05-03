@@ -73,15 +73,34 @@ services:
     build: ./frontend
     container_name: nksquared_frontend
     environment:
-      # Inside the Compose network the API is reachable as http://api:8000.
-      # The browser still talks to http://localhost:5173 — Vite proxies /api/* to this target.
-      VITE_API_URL: http://api:8000
+      VITE_API_URL:     http://api:8000
+      VITE_CHATBOT_URL: http://chatbot:8001
     ports:
       - "5173:5173"
     volumes:
       - ./frontend:/app
       - /app/node_modules
     command: npm run dev -- --host 0.0.0.0
+
+  chatbot:
+    build:
+      context: ./chatbot
+      dockerfile: Dockerfile
+    container_name: nksquared_chatbot
+    ports:
+      - "8001:8001"
+    env_file:
+      - .env
+    environment:
+      # Azure OpenAI — set these in your .env file
+      AZURE_OPENAI_ENDPOINT:    ${AZURE_OPENAI_ENDPOINT}
+      AZURE_OPENAI_API_KEY:     ${AZURE_OPENAI_API_KEY}
+      AZURE_OPENAI_DEPLOYMENT:  ${AZURE_OPENAI_DEPLOYMENT}
+      AZURE_OPENAI_API_VERSION: ${AZURE_OPENAI_API_VERSION}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
 
 volumes:
   pgdata:
