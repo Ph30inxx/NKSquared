@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useLocation } from "react-router-dom";
 import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import Divider from "@mui/material/Divider";
@@ -12,84 +13,13 @@ import ChatIcon from "@mui/icons-material/Chat";
 import CloseIcon from "@mui/icons-material/Close";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import SendIcon from "@mui/icons-material/Send";
-import ThumbUpOutlinedIcon from "@mui/icons-material/ThumbUpOutlined";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import { useChatSession, ChatMessage } from "./useChatSession";
-
-// ── Message bubble ────────────────────────────────────────────────────────────
-
-interface MessageProps {
-  message: ChatMessage;
-  isStreaming: boolean;
-  isLast: boolean;
-  userQuestion: string;
-  onThumbsUp: () => void;
-}
-
-function MessageBubble({
-  message,
-  isStreaming,
-  isLast,
-  userQuestion,
-  onThumbsUp,
-}: MessageProps) {
-  const isUser      = message.role === "user";
-  const isTyping    = isLast && isStreaming && !isUser;
-  const showThumbUp = !isUser && !isTyping && !!message.content;
-
-  return (
-    <Box
-      sx={{
-        display: "flex",
-        flexDirection: "column",
-        alignItems: isUser ? "flex-end" : "flex-start",
-        mb: 1,
-      }}
-    >
-      <Box
-        sx={{
-          maxWidth: "88%",
-          px: 1.5,
-          py: 1,
-          borderRadius: 2,
-          bgcolor: isUser ? "primary.main" : "grey.100",
-          color: isUser ? "white" : "text.primary",
-          fontSize: 13,
-          lineHeight: 1.6,
-          whiteSpace: isUser ? "pre-wrap" : "normal",
-          wordBreak: "break-word",
-          "& p": { m: 0, mb: 1, "&:last-child": { mb: 0 } },
-          "& ul, & ol": { pl: 2.5, m: 0, mb: 1, mt: 0.5 },
-          "& li": { mb: 0.5 },
-          "& h1, & h2, & h3": { m: 0, mt: 1, mb: 0.5, fontSize: 14, fontWeight: 600 },
-        }}
-      >
-        {isUser ? (
-          message.content
-        ) : message.content ? (
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>
-            {message.content}
-          </ReactMarkdown>
-        ) : isTyping ? (
-          "…"
-        ) : null}
-      </Box>
-
-      {showThumbUp && (
-        <Tooltip title="Mark as correct">
-          <IconButton size="small" onClick={onThumbsUp} sx={{ mt: 0.25 }}>
-            <ThumbUpOutlinedIcon sx={{ fontSize: 14 }} />
-          </IconButton>
-        </Tooltip>
-      )}
-    </Box>
-  );
-}
+import { useChatSession } from "./useChatSession";
+import MessageBubble from "./MessageBubble";
 
 // ── Main widget ───────────────────────────────────────────────────────────────
 
 export default function ChatWidget() {
+  const location = useLocation();
   const [open, setOpen]   = useState(false);
   const [input, setInput] = useState("");
   const bottomRef         = useRef<HTMLDivElement>(null);
@@ -100,6 +30,9 @@ export default function ChatWidget() {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  // Hide the widget entirely on the dedicated chat page
+  if (location.pathname === "/chat") return null;
 
   const handleSend = () => {
     const text = input.trim();
