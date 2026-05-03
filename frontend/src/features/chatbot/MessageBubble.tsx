@@ -4,6 +4,9 @@ import Tooltip from "@mui/material/Tooltip";
 import ThumbUpOutlinedIcon from "@mui/icons-material/ThumbUpOutlined";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
+import "katex/dist/katex.min.css";
 import { keyframes } from "@mui/system";
 import { ChatMessage } from "./useChatSession";
 
@@ -73,7 +76,10 @@ export default function MessageBubble({
         {isUser ? (
           message.content
         ) : message.content ? (
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+          <ReactMarkdown 
+            remarkPlugins={[remarkGfm, remarkMath]}
+            rehypePlugins={[rehypeKatex]}
+          >
             {message.content}
           </ReactMarkdown>
         ) : isTyping ? (
