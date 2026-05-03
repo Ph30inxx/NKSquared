@@ -1,6 +1,7 @@
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 
 import AppBootstrap from "./components/AppBootstrap";
+import ChatWidget from "./features/chatbot/ChatWidget";
 import AppLayout from "./components/layout/AppLayout";
 import ProtectedRoute from "./components/ProtectedRoute";
 import Dashboard from "./pages/Dashboard";
@@ -31,6 +32,8 @@ export default function App() {
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
+        {/* Chat widget — visible on all authenticated pages */}
+        <ChatWidget />
       </AppBootstrap>
     </BrowserRouter>
   );
