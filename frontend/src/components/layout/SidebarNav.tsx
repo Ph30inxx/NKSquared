@@ -3,6 +3,7 @@ import DashboardIcon from "@mui/icons-material/Dashboard";
 import BusinessCenterIcon from "@mui/icons-material/BusinessCenter";
 import CurrencyExchangeIcon from "@mui/icons-material/CurrencyExchange";
 import GridOnIcon from "@mui/icons-material/GridOn";
+import InboxIcon from "@mui/icons-material/Inbox";
 import List from "@mui/material/List";
 import ListItemButton from "@mui/material/ListItemButton";
 import ListItemIcon from "@mui/material/ListItemIcon";
@@ -21,6 +22,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: "/", label: "Dashboard", icon: <DashboardIcon /> },
   { to: "/portfolio", label: "Portfolio", icon: <BusinessCenterIcon /> },
   { to: "/grid", label: "Grid", icon: <GridOnIcon /> },
+  { to: "/mis", label: "MIS", icon: <InboxIcon /> },
   {
     to: "/admin/forex-rates",
     label: "FX rates",

@@ -144,6 +144,33 @@ Use `--no-reset` to append to existing rows; default `--reset` truncates
 portfolio + MIS tables first. Forex rates, users, and audit_log are
 preserved across runs.
 
+## Try the MIS intake (Sprint 5)
+
+Sidebar → **MIS** opens the Inbox. The two pre-loaded `Approved` rows from
+`load-samples` show up there alongside any new uploads.
+
+To exercise the upload-then-approve flow on a fresh period:
+
+1. Click **+ New submission** → company `company_99`, period 2025-04, attach
+   `samples/Company_01_Mock MIS_FY26.xlsx`.
+2. Status flips Pending → Submitted.
+3. Open the detail page → click **Refresh preview** → see
+   `template=v1, monthly_count=36, bu_count=12` plus 5 sample rows.
+4. Click **Approve** → status flips to Approved → 36 `mis_monthly` rows are
+   inserted with the new submission id.
+
+Negative paths:
+
+- Re-creating the same `(company, period)` returns **409**.
+- Uploading a non-xlsx file or a workbook that doesn't contain
+  `Consolidated MIS FY 2026` or `MIS Report FY25-26` returns **422**
+  "Template not recognized" at the preview step.
+- The Reject dialog requires a reason; rejecting sets `status=Rejected` and
+  inserts no `mis_monthly` rows.
+
+Files land at `./data/mis_uploads/<submission_id>.xlsx` on the host
+(mounted into the api + worker containers as `/data`).
+
 ## Project layout
 
 ```

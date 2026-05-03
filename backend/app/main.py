@@ -7,6 +7,7 @@ from app.routers import (
     companies,
     forex,
     health,
+    mis,
     transactions,
     users,
     valuations,
@@ -29,3 +30,4 @@ app.include_router(companies.router, prefix="/api/v1")
 app.include_router(transactions.router, prefix="/api/v1")
 app.include_router(valuations.router, prefix="/api/v1")
 app.include_router(forex.router, prefix="/api/v1")
+app.include_router(mis.router, prefix="/api/v1")
