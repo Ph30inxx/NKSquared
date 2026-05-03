@@ -136,6 +136,30 @@ class MisBuMonthly(Base):
     )
 
 
+class MisAnomaly(Base):
+    __tablename__ = "mis_anomalies"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    submission_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("mis_submissions.id", ondelete="CASCADE"), nullable=False
+    )
+    rule_code: Mapped[str] = mapped_column(String(40), nullable=False)
+    severity: Mapped[str] = mapped_column(String(10), nullable=False)
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    metric: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    period_year: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    period_month: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    geography: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    bu_id: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    detected_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    __table_args__ = (
+        Index("idx_mis_anomalies_submission", "submission_id"),
+    )
+
+
 class MisOutletMonthly(Base):
     __tablename__ = "mis_outlet_monthly"
 

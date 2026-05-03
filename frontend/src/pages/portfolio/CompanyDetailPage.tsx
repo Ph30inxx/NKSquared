@@ -46,6 +46,11 @@ import {
 import CompanyFormDialog from "./CompanyFormDialog";
 import TransactionFormDialog from "./TransactionFormDialog";
 import ValuationFormDialog from "./ValuationFormDialog";
+import BuComparisonChart from "./charts/BuComparisonChart";
+import ChannelMixChart from "./charts/ChannelMixChart";
+import InvestmentTimeline from "./charts/InvestmentTimeline";
+import PnlWaterfallChart from "./charts/PnlWaterfallChart";
+import RevenueTimeseriesChart from "./charts/RevenueTimeseriesChart";
 
 const NEGATIVE_TYPES = new Set(["Investment", "Follow_on"]);
 const POSITIVE_TYPES = new Set(["Partial_exit", "Full_exit", "Distribution"]);
@@ -285,6 +290,34 @@ export default function CompanyDetailPage() {
           </Alert>
         )}
       </Paper>
+
+      {c.company_code ? (
+        <Stack spacing={2}>
+          <Typography variant="h6">MIS analytics</Typography>
+          <Grid container spacing={2}>
+            <Grid item xs={12} lg={6}>
+              <RevenueTimeseriesChart companyCode={c.company_code} />
+            </Grid>
+            <Grid item xs={12} lg={6}>
+              <ChannelMixChart companyCode={c.company_code} />
+            </Grid>
+            <Grid item xs={12} lg={6}>
+              <PnlWaterfallChart companyCode={c.company_code} />
+            </Grid>
+            <Grid item xs={12} lg={6}>
+              <BuComparisonChart companyCode={c.company_code} />
+            </Grid>
+            <Grid item xs={12}>
+              <InvestmentTimeline companyId={c.id} />
+            </Grid>
+          </Grid>
+        </Stack>
+      ) : (
+        <Alert severity="info">
+          No MIS analytics yet — link this company to its MIS code to surface
+          time-series, channel mix, and BU comparisons here.
+        </Alert>
+      )}
 
       <Paper>
         <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ p: 2 }}>

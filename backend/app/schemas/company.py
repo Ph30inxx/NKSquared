@@ -58,6 +58,7 @@ class CompanyListItem(BaseModel):
     id: int
     company_name: str
     display_name: str | None
+    company_code: str | None
     portfolio_type: str | None
     investment_status: str | None
     portfolio_status: str | None

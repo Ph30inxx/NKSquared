@@ -126,10 +126,34 @@ export async function rejectMisSubmission(id: number, reason: string): Promise<M
   return data;
 }
 
+export type MisAnomalySeverity = "warning" | "error";
+
+export interface MisAnomaly {
+  id: number;
+  submission_id: number;
+  rule_code: string;
+  severity: MisAnomalySeverity;
+  message: string;
+  metric: string | null;
+  period_year: number | null;
+  period_month: number | null;
+  geography: string | null;
+  bu_id: string | null;
+  detected_at: string;
+}
+
+export async function listMisAnomalies(id: number): Promise<MisAnomaly[]> {
+  const { data } = await api.get<MisAnomaly[]>(
+    `/mis/submissions/${id}/anomalies`,
+  );
+  return data;
+}
+
 const KEYS = {
   list: (params: MisListParams) => ["mis", "list", params] as const,
   detail: (id: number) => ["mis", "detail", id] as const,
   preview: (id: number) => ["mis", "preview", id] as const,
+  anomalies: (id: number) => ["mis", "anomalies", id] as const,
 };
 
 export function useMisSubmissions(params: MisListParams = {}) {
@@ -184,6 +208,14 @@ export function useApproveMisSubmission() {
       qc.invalidateQueries({ queryKey: KEYS.detail(sub.id) });
       qc.invalidateQueries({ queryKey: ["mis", "list"] });
     },
+  });
+}
+
+export function useMisAnomalies(id: number | null) {
+  return useQuery({
+    queryKey: id == null ? ["mis", "anomalies", "none"] : KEYS.anomalies(id),
+    queryFn: () => listMisAnomalies(id as number),
+    enabled: id != null,
   });
 }
 

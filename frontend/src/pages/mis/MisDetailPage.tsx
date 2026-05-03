@@ -37,6 +37,7 @@ import {
   useUploadMisFile,
 } from "../../api/mis";
 import { formatCr, formatDate } from "../../utils/format";
+import AnomalyPanel from "./AnomalyPanel";
 
 const STATUS_COLOR: Record<
   MisSubmissionStatus,
@@ -207,6 +208,8 @@ export default function MisDetailPage() {
       {s.rejection_reason && (
         <Alert severity="error">Rejection reason: {s.rejection_reason}</Alert>
       )}
+
+      {s.source_file_name && <AnomalyPanel submissionId={s.id} />}
 
       <Paper sx={{ p: 3 }}>
         <Grid container spacing={3}>

@@ -1,3 +1,4 @@
+import logging
 from dataclasses import fields as dataclass_fields
 from datetime import datetime, timezone
 
@@ -5,11 +6,20 @@ from sqlalchemy import delete
 from sqlalchemy.orm import Session
 
 from app.models.audit import AuditLog
-from app.models.mis import MisBuMonthly, MisMonthly, MisOutletMonthly, MisSubmission
+from app.models.mis import (
+    MisAnomaly,
+    MisBuMonthly,
+    MisMonthly,
+    MisOutletMonthly,
+    MisSubmission,
+)
 from app.schemas.mis import MisSubmissionCreate
+from app.services import anomaly_detector
 from app.services.audit_service import record_audit
 from app.services.mis import parser, storage
 from app.services.sample_loader.mis_loader_v1 import ParsedMisSubmission
+
+logger = logging.getLogger(__name__)
 
 _AUDIT_ENTITY = "mis_submission"
 
@@ -73,6 +83,8 @@ def attach_file(
         field_name="source_file_name",
         new_value=filename,
     )
+    db.flush()
+    _refresh_anomalies(db, submission)
     db.commit()
     db.refresh(submission)
     return submission
@@ -131,9 +143,52 @@ def approve_submission(
         action="APPROVE",
         new_value=f"template={template} monthly={len(parsed.monthly_rows)} bu={len(parsed.bu_rows)}",
     )
+    db.flush()
+    _refresh_anomalies(db, submission, parsed=parsed)
     db.commit()
     db.refresh(submission)
     return submission
+
+
+def _refresh_anomalies(
+    db: Session,
+    submission: MisSubmission,
+    *,
+    parsed: ParsedMisSubmission | None = None,
+) -> None:
+    """Re-run the detector and replace persisted anomalies. Tolerant of parse
+    failures (logged + skipped) so detection never blocks the upload/approval flow.
+    """
+    if parsed is None:
+        if submission.source_file_url is None:
+            return
+        try:
+            _, parsed = preview_submission(submission)
+        except Exception as exc:  # parser.UnknownTemplateError or anything else
+            logger.warning(
+                "anomaly detector skipped for submission %s: %s", submission.id, exc
+            )
+            db.execute(delete(MisAnomaly).where(MisAnomaly.submission_id == submission.id))
+            submission.anomaly_count = 0
+            return
+
+    findings = anomaly_detector.detect(db, submission, parsed)
+    db.execute(delete(MisAnomaly).where(MisAnomaly.submission_id == submission.id))
+    for f in findings:
+        db.add(
+            MisAnomaly(
+                submission_id=submission.id,
+                rule_code=f.rule_code,
+                severity=f.severity,
+                message=f.message,
+                metric=f.metric,
+                period_year=f.period_year,
+                period_month=f.period_month,
+                geography=f.geography,
+                bu_id=f.bu_id,
+            )
+        )
+    submission.anomaly_count = len(findings)
 
 
 def reject_submission(

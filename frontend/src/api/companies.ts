@@ -50,6 +50,7 @@ export interface CompanyListItem {
   id: number;
   company_name: string;
   display_name: string | null;
+  company_code: string | null;
   portfolio_type: string | null;
   investment_status: string | null;
   portfolio_status: string | null;

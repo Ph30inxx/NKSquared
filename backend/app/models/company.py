@@ -14,6 +14,10 @@ class PortfolioCompany(Base):
     company_name: Mapped[str] = mapped_column(String(100), nullable=False)
     display_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
+    # MIS-side identifier (e.g. 'company_01'). Bridges the integer-id portfolio
+    # world to the string-id mis_* tables. Nullable until backfilled.
+    company_code: Mapped[str | None] = mapped_column(String(20), nullable=True)
+
     # 'Entity_D_Core','Entity_D_Non_Core','Entity_D_LLC','Entity_E',
     # 'Entity_A','Strategic_Equity','Entity_C','Real_Estate_Debt'
     portfolio_type: Mapped[str | None] = mapped_column(String(50), nullable=True)

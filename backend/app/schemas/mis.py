@@ -71,3 +71,64 @@ class MisSubmissionPreview(BaseModel):
     bu_count: int
     outlet_count: int
     sample_monthly: list[MisSubmissionPreviewRow]
+
+
+class MisAnomalyResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    submission_id: int
+    rule_code: str
+    severity: str
+    message: str
+    metric: str | None
+    period_year: int | None
+    period_month: int | None
+    geography: str | None
+    bu_id: str | None
+    detected_at: datetime
+
+
+class TimeseriesPoint(BaseModel):
+    month: date
+    value: Decimal | None
+    mom_pct: Decimal | None
+
+
+class TimeseriesResponse(BaseModel):
+    company_code: str
+    months: list[date]
+    # Either flat (breakdown=none/channels) or nested (breakdown=geography).
+    series: dict[str, list[TimeseriesPoint] | dict[str, list[TimeseriesPoint]]]
+
+
+class SummaryKpi(BaseModel):
+    value: Decimal | None
+    prev_value: Decimal | None
+    mom_pct: Decimal | None
+
+
+class WaterfallStep(BaseModel):
+    label: str
+    value: Decimal | None
+    kind: str
+
+
+class BuBreakdownRow(BaseModel):
+    bu_id: str | None
+    revenue_lacs: Decimal | None
+    gross_margin_lacs: Decimal | None
+    gross_margin_pct: Decimal | None
+    ebitda_lacs: Decimal | None
+    ebitda_pct: Decimal | None
+
+
+class CompanySummaryResponse(BaseModel):
+    company_code: str
+    latest_month: date
+    kpis: dict[str, SummaryKpi]
+    waterfall: list[WaterfallStep]
+    bu_breakdown: list[BuBreakdownRow]
+    channel_mix: dict[str, Decimal]
+    latest_submission_id: int | None
+    anomaly_count: int

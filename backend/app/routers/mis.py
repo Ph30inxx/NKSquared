@@ -1,3 +1,5 @@
+from datetime import date
+
 from fastapi import (
     APIRouter,
     Depends,
@@ -13,9 +15,17 @@ from sqlalchemy.orm import Session
 
 from app.core.deps import get_current_user, require_role
 from app.db.session import get_db
-from app.models.mis import MisBuMonthly, MisMonthly, MisOutletMonthly, MisSubmission
+from app.models.mis import (
+    MisAnomaly,
+    MisBuMonthly,
+    MisMonthly,
+    MisOutletMonthly,
+    MisSubmission,
+)
 from app.models.user import User
 from app.schemas.mis import (
+    CompanySummaryResponse,
+    MisAnomalyResponse,
     MisSubmissionCreate,
     MisSubmissionListItem,
     MisSubmissionPreview,
@@ -23,8 +33,9 @@ from app.schemas.mis import (
     MisSubmissionRejectRequest,
     MisSubmissionResponse,
     PaginatedMisSubmissions,
+    TimeseriesResponse,
 )
-from app.services import mis_service
+from app.services import mis_service, timeseries_service
 from app.services.mis.parser import UnknownTemplateError
 
 router = APIRouter(prefix="/mis", tags=["mis"])
@@ -179,3 +190,82 @@ def reject(
     return mis_service.reject_submission(
         db, submission, reason=payload.reason, user_id=user.id
     )
+
+
+@router.get(
+    "/submissions/{submission_id}/anomalies",
+    response_model=list[MisAnomalyResponse],
+)
+def list_anomalies(
+    submission_id: int,
+    db: Session = Depends(get_db),
+    _user: User = Depends(get_current_user),
+) -> list[MisAnomaly]:
+    _get_submission_or_404(db, submission_id)
+    rows = (
+        db.execute(
+            select(MisAnomaly)
+            .where(MisAnomaly.submission_id == submission_id)
+            .order_by(MisAnomaly.severity.desc(), MisAnomaly.id.asc())
+        )
+        .scalars()
+        .all()
+    )
+    return list(rows)
+
+
+def _parse_year_month(value: str | None) -> date | None:
+    if value is None:
+        return None
+    try:
+        year, month = value.split("-")
+        return date(int(year), int(month), 1)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=400, detail=f"Invalid YYYY-MM value: {value}"
+        ) from exc
+
+
+@router.get(
+    "/companies/{company_code}/timeseries",
+    response_model=TimeseriesResponse,
+)
+def company_timeseries(
+    company_code: str,
+    db: Session = Depends(get_db),
+    _user: User = Depends(get_current_user),
+    metrics: str | None = Query(
+        None,
+        description="Comma-separated metric keys. Defaults to revenue/cogs/GP/EBITDA/GM%.",
+    ),
+    from_: str | None = Query(None, alias="from", description="YYYY-MM"),
+    to: str | None = Query(None, description="YYYY-MM"),
+    breakdown: str = Query("none", pattern="^(none|geography|channels)$"),
+) -> dict:
+    metric_list = [m.strip() for m in metrics.split(",")] if metrics else None
+    return timeseries_service.get_timeseries(
+        db,
+        company_code,
+        metrics=metric_list,
+        from_month=_parse_year_month(from_),
+        to_month=_parse_year_month(to),
+        breakdown=breakdown,
+    )
+
+
+@router.get(
+    "/companies/{company_code}/summary",
+    response_model=CompanySummaryResponse,
+)
+def company_summary(
+    company_code: str,
+    db: Session = Depends(get_db),
+    _user: User = Depends(get_current_user),
+) -> dict:
+    result = timeseries_service.get_summary(db, company_code)
+    if result is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No MIS data for company_code={company_code}",
+        )
+    return result

@@ -5,6 +5,7 @@ from app.config import settings
 from app.routers import (
     auth,
     companies,
+    dashboards,
     forex,
     health,
     mis,
@@ -31,3 +32,4 @@ app.include_router(transactions.router, prefix="/api/v1")
 app.include_router(valuations.router, prefix="/api/v1")
 app.include_router(forex.router, prefix="/api/v1")
 app.include_router(mis.router, prefix="/api/v1")
+app.include_router(dashboards.router, prefix="/api/v1")
