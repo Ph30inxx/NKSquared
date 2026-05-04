@@ -25,6 +25,8 @@ def _make_model() -> AzureOpenAI:
         azure_endpoint=AZURE_OPENAI_ENDPOINT,
         api_key=AZURE_OPENAI_API_KEY,
         api_version=AZURE_OPENAI_API_VERSION,
+        timeout=300,        # 5 min — prevents Azure dropping long-running streams
+        max_retries=2,
     )
 
 

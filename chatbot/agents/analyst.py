@@ -5,7 +5,6 @@ Handles every data question: portfolio, MIS, and cross-cutting analysis.
 from agno.agent import Agent
 from agno.models.azure import AzureOpenAI
 from agno.tools.sql import SQLTools
-from agno.tools.reasoning import ReasoningTools
 from agno.db.postgres import PostgresDb
 
 from chatbot.config import (
@@ -44,6 +43,8 @@ def _make_model() -> AzureOpenAI:
         azure_endpoint=AZURE_OPENAI_ENDPOINT,
         api_key=AZURE_OPENAI_API_KEY,
         api_version=AZURE_OPENAI_API_VERSION,
+        timeout=300,        # 5 min — prevents Azure dropping long-running streams
+        max_retries=2,
     )
 
 
@@ -74,9 +75,6 @@ def create_analyst() -> Agent:
         model=_make_model(),
 
         tools=[
-            # Step 0: planning
-            ReasoningTools(add_instructions=True),
-
             # Step 1: knowledge base lookup
             find_similar_query,
             save_validated_query,

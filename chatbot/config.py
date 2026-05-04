@@ -28,5 +28,9 @@ AGENT_NUM_HISTORY_RUNS  = 6
 # ── Query safety ──────────────────────────────────────────────────────────────
 SAFE_QUERY_ROW_LIMIT = 500
 
+# ── Auth (same SECRET_KEY as platform backend) ────────────────────────────────
+JWT_SECRET_KEY = os.getenv("SECRET_KEY", "change-me-in-production")
+JWT_ALGORITHM  = "HS256"
+
 # ── Fiscal year ───────────────────────────────────────────────────────────────
 FY_START_MONTH = 4      # April — Indian financial year
