@@ -71,6 +71,10 @@ export default function MessageBubble({
           "& li": { mb: 0.5 },
           "& h1, & h2, & h3": { m: 0, mt: 1.5, mb: 1, fontSize: 16, fontWeight: 600 },
           "& hr": { my: 1.5, border: "none", borderTop: "1px solid", borderColor: "divider" },
+          "& table": { borderCollapse: "collapse", width: "100%", mb: 1.5 },
+          "& th, & td": { border: "1px solid", borderColor: "divider", px: 1.5, py: 1, textAlign: "left", fontSize: 13 },
+          "& th": { bgcolor: "action.hover", fontWeight: 600 },
+          "& tr:nth-of-type(even)": { bgcolor: "action.hover" },
         }}
       >
         {isUser ? (
@@ -80,7 +84,11 @@ export default function MessageBubble({
             remarkPlugins={[remarkGfm, remarkMath]}
             rehypePlugins={[rehypeKatex]}
           >
-            {message.content}
+            {message.content
+              .replace(/\\\[/g, "$$")
+              .replace(/\\\]/g, "$$")
+              .replace(/\\\(/g, "$")
+              .replace(/\\\)/g, "$")}
           </ReactMarkdown>
         ) : isTyping ? (
           <TypingIndicator />
