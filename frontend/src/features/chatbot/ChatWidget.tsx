@@ -31,8 +31,10 @@ export default function ChatWidget() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // Hide the widget entirely on the dedicated chat page
+  // Hide the widget on the dedicated chat page and on unauthenticated public pages.
   if (location.pathname === "/chat") return null;
+  if (location.pathname.startsWith("/upload/")) return null;
+  if (location.pathname === "/login") return null;
 
   const handleSend = () => {
     const text = input.trim();

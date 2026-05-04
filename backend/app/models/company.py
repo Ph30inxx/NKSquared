@@ -44,6 +44,9 @@ class PortfolioCompany(Base):
     currency: Mapped[str] = mapped_column(String(10), nullable=False, default="INR", server_default="INR")
 
     primary_contact_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    primary_contact_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    primary_contact_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    escalation_contact_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     reporting_frequency: Mapped[str] = mapped_column(
         String(20), nullable=False, default="Monthly", server_default="Monthly"
     )

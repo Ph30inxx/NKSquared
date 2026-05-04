@@ -9,6 +9,8 @@ from app.routers import (
     forex,
     health,
     mis,
+    public_upload,
+    reminders,
     transactions,
     users,
     valuations,
@@ -33,3 +35,5 @@ app.include_router(valuations.router, prefix="/api/v1")
 app.include_router(forex.router, prefix="/api/v1")
 app.include_router(mis.router, prefix="/api/v1")
 app.include_router(dashboards.router, prefix="/api/v1")
+app.include_router(reminders.router, prefix="/api/v1")
+app.include_router(public_upload.router, prefix="/api/v1")

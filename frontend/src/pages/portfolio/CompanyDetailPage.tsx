@@ -6,6 +6,7 @@ import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import DeleteIcon from "@mui/icons-material/Delete";
 import EditIcon from "@mui/icons-material/Edit";
 import RefreshIcon from "@mui/icons-material/Refresh";
+import SendIcon from "@mui/icons-material/Send";
 import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
@@ -14,6 +15,7 @@ import CircularProgress from "@mui/material/CircularProgress";
 import Grid from "@mui/material/Grid";
 import IconButton from "@mui/material/IconButton";
 import Paper from "@mui/material/Paper";
+import Snackbar from "@mui/material/Snackbar";
 import Stack from "@mui/material/Stack";
 import Table from "@mui/material/Table";
 import TableBody from "@mui/material/TableBody";
@@ -43,6 +45,7 @@ import {
   formatPct,
   moicColor,
 } from "../../utils/format";
+import { useSendReminderNow } from "../../api/reminders";
 import CompanyFormDialog from "./CompanyFormDialog";
 import TransactionFormDialog from "./TransactionFormDialog";
 import ValuationFormDialog from "./ValuationFormDialog";
@@ -108,6 +111,11 @@ export default function CompanyDetailPage() {
   const [valDialogOpen, setValDialogOpen] = useState(false);
   const [recomputeMessage, setRecomputeMessage] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [reminderToast, setReminderToast] = useState<{
+    severity: "success" | "error";
+    message: string;
+  } | null>(null);
+  const sendReminder = useSendReminderNow();
 
   if (companyId == null) {
     return <Alert severity="error">Missing company id.</Alert>;
@@ -154,6 +162,26 @@ export default function CompanyDetailPage() {
     }
   }
 
+  async function handleSendReminderNow() {
+    try {
+      const log = await sendReminder.mutateAsync({ companyId: c.id });
+      setReminderToast({
+        severity: log.status === "Sent" ? "success" : "error",
+        message:
+          log.status === "Sent"
+            ? `Reminder sent to ${log.recipient_email}.`
+            : `Reminder failed: ${log.subject ?? log.status}`,
+      });
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: unknown } } })?.response?.data
+        ?.detail;
+      setReminderToast({
+        severity: "error",
+        message: typeof detail === "string" ? detail : "Could not send reminder.",
+      });
+    }
+  }
+
   async function handleRecomputeFx() {
     setActionError(null);
     setRecomputeMessage(null);
@@ -180,6 +208,13 @@ export default function CompanyDetailPage() {
         </Typography>
         {!c.is_active && <Chip label="Inactive" color="warning" size="small" />}
         <Box flexGrow={1} />
+        <Button
+          startIcon={<SendIcon />}
+          onClick={handleSendReminderNow}
+          disabled={sendReminder.isPending || !c.is_active}
+        >
+          {sendReminder.isPending ? "Sending…" : "Send reminder now"}
+        </Button>
         <Button startIcon={<EditIcon />} onClick={() => setEditOpen(true)}>
           Edit
         </Button>
@@ -192,6 +227,22 @@ export default function CompanyDetailPage() {
           Delete
         </Button>
       </Stack>
+      <Snackbar
+        open={!!reminderToast}
+        autoHideDuration={6000}
+        onClose={() => setReminderToast(null)}
+        anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+      >
+        {reminderToast ? (
+          <Alert
+            severity={reminderToast.severity}
+            onClose={() => setReminderToast(null)}
+            sx={{ width: "100%" }}
+          >
+            {reminderToast.message}
+          </Alert>
+        ) : undefined}
+      </Snackbar>
 
       {actionError && <Alert severity="error">{actionError}</Alert>}
 

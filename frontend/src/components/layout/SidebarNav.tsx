@@ -5,6 +5,7 @@ import CurrencyExchangeIcon from "@mui/icons-material/CurrencyExchange";
 import GridOnIcon from "@mui/icons-material/GridOn";
 import InboxIcon from "@mui/icons-material/Inbox";
 import ChatIcon from "@mui/icons-material/Chat";
+import NotificationsActiveIcon from "@mui/icons-material/NotificationsActive";
 import List from "@mui/material/List";
 import ListItemButton from "@mui/material/ListItemButton";
 import ListItemIcon from "@mui/material/ListItemIcon";
@@ -25,6 +26,11 @@ const NAV_ITEMS: NavItem[] = [
   { to: "/grid", label: "Grid", icon: <GridOnIcon /> },
   { to: "/chat", label: "Chat", icon: <ChatIcon /> },
   { to: "/mis", label: "MIS", icon: <InboxIcon /> },
+  {
+    to: "/admin/reminders",
+    label: "Reminders",
+    icon: <NotificationsActiveIcon />,
+  },
   {
     to: "/admin/forex-rates",
     label: "FX rates",
