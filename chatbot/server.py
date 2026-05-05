@@ -11,6 +11,7 @@ Endpoints:
   POST   /admin/reload-schema
 """
 import asyncio
+import contextvars
 import json
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -27,6 +28,7 @@ from pydantic import BaseModel
 
 from chatbot.agents.coordinator import create_coordinator
 from chatbot.config import DB_URL_SYNC, JWT_ALGORITHM, JWT_SECRET_KEY
+from chatbot.context import reset_auth_token, set_auth_token
 from chatbot.prompts import invalidate_prompt_cache
 
 app = FastAPI(
@@ -150,7 +152,7 @@ _thread_pool = ThreadPoolExecutor(max_workers=10)
 # ── Chat endpoint ─────────────────────────────────────────────────────────────
 
 @app.post("/chat")
-async def chat(request: ChatRequest, _: int = Depends(get_current_user_id)):
+async def chat(request: ChatRequest, creds: HTTPAuthorizationCredentials = Depends(_bearer)):
     """
     Text chat endpoint.
 
@@ -161,50 +163,71 @@ async def chat(request: ChatRequest, _: int = Depends(get_current_user_id)):
     Pass the same session_id across turns to maintain conversation context.
     Omit it (or send null) to start a new conversation.
     """
-    session_id = request.session_id or str(uuid.uuid4())
-    coordinator = create_coordinator(session_id=session_id)
+    # Validate JWT (same logic as get_current_user_id; inlined so we have the
+    # raw token available for forwarding to the backend API in write tools).
+    try:
+        payload = jwt.decode(creds.credentials, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
+        if payload.get("type") != "access":
+            raise HTTPException(status_code=401, detail="Invalid token type")
+        int(payload["sub"])
+    except (JWTError, KeyError, ValueError):
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
 
-    _touch_conversation(session_id, request.message)
+    # Store the raw token in a context var so write tools can forward it to
+    # the backend API without it being passed as a parameter.
+    _tok = set_auth_token(creds.credentials)
 
-    if request.stream:
-        loop = asyncio.get_event_loop()
-        queue: asyncio.Queue[str | None] = asyncio.Queue()
+    try:
+        session_id = request.session_id or str(uuid.uuid4())
+        coordinator = create_coordinator(session_id=session_id)
 
-        def _produce():
-            try:
-                for chunk in coordinator.run(input=request.message, stream=True):
-                    event_type = getattr(chunk, "event", None)
-                    if event_type in ("run_response_content", "team_run_content", "TeamRunContent"):
-                        content = getattr(chunk, "content", None)
-                        if content:
-                            loop.call_soon_threadsafe(
-                                queue.put_nowait, f"data: {json.dumps(content)}\n\n"
-                            )
-            except Exception as exc:
-                loop.call_soon_threadsafe(queue.put_nowait, f"data: [ERROR] {exc}\n\n")
-            finally:
-                loop.call_soon_threadsafe(queue.put_nowait, None)  # sentinel
+        _touch_conversation(session_id, request.message)
 
-        _thread_pool.submit(_produce)
+        if request.stream:
+            loop = asyncio.get_event_loop()
+            queue: asyncio.Queue[str | None] = asyncio.Queue()
 
-        async def generate():
-            while True:
-                item = await queue.get()
-                if item is None:
-                    break
-                yield item
-            yield "data: [DONE]\n\n"
+            def _produce():
+                try:
+                    for chunk in coordinator.run(input=request.message, stream=True):
+                        event_type = getattr(chunk, "event", None)
+                        if event_type in ("run_response_content", "team_run_content", "TeamRunContent"):
+                            content = getattr(chunk, "content", None)
+                            if content:
+                                loop.call_soon_threadsafe(
+                                    queue.put_nowait, f"data: {json.dumps(content)}\n\n"
+                                )
+                except Exception as exc:
+                    loop.call_soon_threadsafe(queue.put_nowait, f"data: [ERROR] {exc}\n\n")
+                finally:
+                    loop.call_soon_threadsafe(queue.put_nowait, None)  # sentinel
 
-        return StreamingResponse(
-            generate(),
-            media_type="text/event-stream",
-            headers={"X-Session-ID": session_id},
+            # copy_context() snapshots the current ContextVar values (including
+            # _auth_token) so they are visible inside the thread-pool thread.
+            _thread_pool.submit(contextvars.copy_context().run, _produce)
+
+            async def generate():
+                while True:
+                    item = await queue.get()
+                    if item is None:
+                        break
+                    yield item
+                yield "data: [DONE]\n\n"
+
+            return StreamingResponse(
+                generate(),
+                media_type="text/event-stream",
+                headers={"X-Session-ID": session_id},
+            )
+
+        # Non-streaming: run_in_executor propagates context automatically.
+        result = await asyncio.get_event_loop().run_in_executor(
+            _thread_pool, lambda: coordinator.run(input=request.message, stream=False)
         )
+        return ChatResponse(response=result.content, session_id=session_id)
 
-    result = await asyncio.get_event_loop().run_in_executor(
-        _thread_pool, lambda: coordinator.run(input=request.message, stream=False)
-    )
-    return ChatResponse(response=result.content, session_id=session_id)
+    finally:
+        reset_auth_token(_tok)
 
 
 def _touch_conversation(session_id: str, message: str) -> None:
