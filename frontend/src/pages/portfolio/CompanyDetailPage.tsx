@@ -5,6 +5,7 @@ import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import DeleteIcon from "@mui/icons-material/Delete";
 import EditIcon from "@mui/icons-material/Edit";
+import FileDownloadIcon from "@mui/icons-material/FileDownload";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import SendIcon from "@mui/icons-material/Send";
 import Alert from "@mui/material/Alert";
@@ -45,6 +46,7 @@ import {
   formatPct,
   moicColor,
 } from "../../utils/format";
+import { downloadMisXlsx } from "../../api/exports";
 import { useSendReminderNow } from "../../api/reminders";
 import CompanyFormDialog from "./CompanyFormDialog";
 import TransactionFormDialog from "./TransactionFormDialog";
@@ -215,6 +217,14 @@ export default function CompanyDetailPage() {
         >
           {sendReminder.isPending ? "Sending…" : "Send reminder now"}
         </Button>
+        {c.company_code && (
+          <Button
+            startIcon={<FileDownloadIcon />}
+            onClick={() => downloadMisXlsx(c.company_code as string)}
+          >
+            MIS export
+          </Button>
+        )}
         <Button startIcon={<EditIcon />} onClick={() => setEditOpen(true)}>
           Edit
         </Button>

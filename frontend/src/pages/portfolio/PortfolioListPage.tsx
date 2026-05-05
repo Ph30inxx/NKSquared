@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import AddIcon from "@mui/icons-material/Add";
+import FileDownloadIcon from "@mui/icons-material/FileDownload";
 import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
@@ -23,6 +24,7 @@ import {
   PORTFOLIO_TYPES,
   useCompanies,
 } from "../../api/companies";
+import { downloadPortfolioXlsx } from "../../api/exports";
 import { formatCr, formatMoic, moicColor } from "../../utils/format";
 import CompanyFormDialog from "./CompanyFormDialog";
 
@@ -35,6 +37,16 @@ export default function PortfolioListPage() {
   const [investmentStatus, setInvestmentStatus] = useState("");
   const [portfolioType, setPortfolioType] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
+
+  async function handleExport() {
+    setExporting(true);
+    try {
+      await downloadPortfolioXlsx();
+    } finally {
+      setExporting(false);
+    }
+  }
 
   const { data, isLoading, isError, error } = useCompanies({
     limit: rowsPerPage,
@@ -51,13 +63,23 @@ export default function PortfolioListPage() {
         <Typography variant="h4" component="h1">
           Portfolio
         </Typography>
-        <Button
-          variant="contained"
-          startIcon={<AddIcon />}
-          onClick={() => setCreateOpen(true)}
-        >
-          New company
-        </Button>
+        <Stack direction="row" spacing={1}>
+          <Button
+            variant="outlined"
+            startIcon={<FileDownloadIcon />}
+            onClick={handleExport}
+            disabled={exporting}
+          >
+            {exporting ? "Exporting…" : "Export to Excel"}
+          </Button>
+          <Button
+            variant="contained"
+            startIcon={<AddIcon />}
+            onClick={() => setCreateOpen(true)}
+          >
+            New company
+          </Button>
+        </Stack>
       </Stack>
 
       <Paper sx={{ p: 2 }}>

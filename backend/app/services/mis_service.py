@@ -17,6 +17,7 @@ from app.schemas.mis import MisSubmissionCreate
 from app.services import anomaly_detector
 from app.services.audit_service import record_audit
 from app.services.mis import parser, storage
+from app.services.mis.template_runner import parsed_to_dict
 from app.services.sample_loader.mis_loader_v1 import ParsedMisSubmission
 
 logger = logging.getLogger(__name__)
@@ -66,12 +67,18 @@ def attach_file(
     content: bytes,
     filename: str,
     user_id: int | None,
+    template_id: int | None = None,
 ) -> MisSubmission:
     path = storage.save_uploaded_file(submission.id, content)
     submission.source_file_name = filename
     submission.source_file_url = str(path)
     submission.uploaded_at = datetime.now(timezone.utc)
     submission.uploaded_by = user_id
+    if template_id is not None:
+        submission.template_id = template_id
+    # Re-uploading invalidates any cached parse result.
+    submission.last_parse_at = None
+    submission.last_parse_payload = None
     if submission.status == "Pending":
         submission.status = "Submitted"
     record_audit(
@@ -90,12 +97,17 @@ def attach_file(
     return submission
 
 
-def preview_submission(submission: MisSubmission) -> tuple[str, ParsedMisSubmission]:
+def preview_submission(
+    submission: MisSubmission, *, db: Session | None = None
+) -> tuple[str, ParsedMisSubmission]:
     """Re-parse the file on disk; commit nothing. Raises UnknownTemplateError on bad file."""
     if submission.source_file_url is None:
         raise ValueError("Submission has no uploaded file")
     template, parsed = parser.parse(
-        storage.upload_path(submission.id), company_id=submission.company_id
+        storage.upload_path(submission.id),
+        company_id=submission.company_id,
+        template_id=submission.template_id,
+        db=db,
     )
     return template, parsed
 
@@ -119,7 +131,9 @@ def approve_submission(
 ) -> MisSubmission:
     if submission.source_file_url is None:
         raise ValueError("Cannot approve a submission with no uploaded file")
-    template, parsed = preview_submission(submission)
+    template, parsed = preview_submission(submission, db=db)
+    submission.last_parse_at = datetime.now(timezone.utc)
+    submission.last_parse_payload = parsed_to_dict(parsed)
 
     # Idempotent: re-approving wipes old children + re-inserts.
     db.execute(delete(MisOutletMonthly).where(MisOutletMonthly.submission_id == submission.id))
@@ -163,7 +177,7 @@ def _refresh_anomalies(
         if submission.source_file_url is None:
             return
         try:
-            _, parsed = preview_submission(submission)
+            _, parsed = preview_submission(submission, db=db)
         except Exception as exc:  # parser.UnknownTemplateError or anything else
             logger.warning(
                 "anomaly detector skipped for submission %s: %s", submission.id, exc

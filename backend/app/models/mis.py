@@ -2,6 +2,7 @@ from datetime import date, datetime
 from decimal import Decimal
 
 from sqlalchemy import (
+    JSON,
     Date,
     DateTime,
     ForeignKey,
@@ -13,9 +14,12 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
+
+_JSON = JSON().with_variant(JSONB(), "postgresql")
 
 
 class MisSubmission(Base):
@@ -44,8 +48,20 @@ class MisSubmission(Base):
     anomaly_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    template_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("mis_templates.id", ondelete="SET NULL"), nullable=True
+    )
+    last_parse_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_parse_payload: Mapped[dict | None] = mapped_column(_JSON, nullable=True)
+
     __table_args__ = (
         UniqueConstraint("company_id", "period_year", "period_month", name="uq_mis_submission_period"),
+        Index(
+            "idx_mis_submissions_status_period",
+            "status",
+            "period_year",
+            "period_month",
+        ),
     )
 
 

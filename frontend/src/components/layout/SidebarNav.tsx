@@ -3,9 +3,11 @@ import DashboardIcon from "@mui/icons-material/Dashboard";
 import BusinessCenterIcon from "@mui/icons-material/BusinessCenter";
 import CurrencyExchangeIcon from "@mui/icons-material/CurrencyExchange";
 import GridOnIcon from "@mui/icons-material/GridOn";
+import HistoryIcon from "@mui/icons-material/History";
 import InboxIcon from "@mui/icons-material/Inbox";
 import ChatIcon from "@mui/icons-material/Chat";
 import NotificationsActiveIcon from "@mui/icons-material/NotificationsActive";
+import RuleIcon from "@mui/icons-material/Rule";
 import List from "@mui/material/List";
 import ListItemButton from "@mui/material/ListItemButton";
 import ListItemIcon from "@mui/material/ListItemIcon";
@@ -26,10 +28,16 @@ const NAV_ITEMS: NavItem[] = [
   { to: "/grid", label: "Grid", icon: <GridOnIcon /> },
   { to: "/chat", label: "Chat", icon: <ChatIcon /> },
   { to: "/mis", label: "MIS", icon: <InboxIcon /> },
+  { to: "/mis/templates", label: "MIS Templates", icon: <RuleIcon /> },
   {
     to: "/admin/reminders",
     label: "Reminders",
     icon: <NotificationsActiveIcon />,
+  },
+  {
+    to: "/admin/audit-log",
+    label: "Audit Log",
+    icon: <HistoryIcon />,
   },
   {
     to: "/admin/forex-rates",

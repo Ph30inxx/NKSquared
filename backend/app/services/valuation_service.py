@@ -9,6 +9,7 @@ from app.models.valuation import Valuation
 from app.schemas.valuation import ValuationCreate, ValuationUpdate
 from app.services.audit_service import record_audit
 from app.services.metrics_service import recompute_company_metrics
+from app.tasks.aggregates import schedule_refresh
 
 _AUDIT_ENTITY = "valuation"
 
@@ -138,5 +139,6 @@ def mark_current(
     db.flush()
     recompute_company_metrics(db, company.id)
     db.commit()
+    schedule_refresh()
     db.refresh(company)
     return company
