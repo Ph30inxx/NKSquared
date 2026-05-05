@@ -1,4 +1,60 @@
+import { useAuthStore } from "../../stores/auth";
+
 const CHAT_BASE = "/chat-api";
+
+function authHeader(): Record<string, string> {
+  const token = useAuthStore.getState().accessToken;
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+// ── Conversation types ────────────────────────────────────────────────────────
+
+export interface Conversation {
+  id: string;
+  session_id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+}
+
+// ── Conversation CRUD ─────────────────────────────────────────────────────────
+
+export async function listConversations(): Promise<Conversation[]> {
+  const res = await fetch(`${CHAT_BASE}/conversations`, {
+    headers: authHeader(),
+  });
+  if (!res.ok) throw new Error(`Failed to list conversations: ${res.status}`);
+  return res.json();
+}
+
+export async function createConversation(): Promise<{ id: string; session_id: string; title: string }> {
+  const res = await fetch(`${CHAT_BASE}/conversations`, {
+    method: "POST",
+    headers: authHeader(),
+  });
+  if (!res.ok) throw new Error(`Failed to create conversation: ${res.status}`);
+  return res.json();
+}
+
+export async function deleteConversation(id: string): Promise<void> {
+  await fetch(`${CHAT_BASE}/conversations/${id}`, {
+    method: "DELETE",
+    headers: authHeader(),
+  });
+}
+
+export async function getSessionHistory(
+  sessionId: string,
+): Promise<Array<{ role: string; content: string }>> {
+  const res = await fetch(`${CHAT_BASE}/session/${sessionId}/history`, {
+    headers: authHeader(),
+  });
+  if (!res.ok) throw new Error(`Failed to load history: ${res.status}`);
+  const data = await res.json();
+  return data.messages ?? [];
+}
+
+// ── Chat streaming ────────────────────────────────────────────────────────────
 
 /**
  * Send a message to the chatbot via SSE streaming.
@@ -15,7 +71,7 @@ export async function sendMessage(
   try {
     res = await fetch(`${CHAT_BASE}/chat`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...authHeader() },
       body: JSON.stringify({ message, session_id: sessionId, stream: true }),
     });
   } catch {
@@ -28,7 +84,7 @@ export async function sendMessage(
     return;
   }
 
-  const reader  = res.body!.getReader();
+  const reader = res.body!.getReader();
   const decoder = new TextDecoder();
 
   while (true) {
@@ -47,10 +103,8 @@ export async function sendMessage(
         return;
       }
       try {
-        const decoded = JSON.parse(payload);
-        onChunk(decoded);
+        onChunk(JSON.parse(payload));
       } catch {
-        // Fallback for non-json or partial lines
         onChunk(payload);
       }
     }
@@ -68,7 +122,7 @@ export async function signalThumbsUp(
 ): Promise<void> {
   await fetch(`${CHAT_BASE}/chat`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeader() },
     body: JSON.stringify({
       message:
         `[SYSTEM: The user confirmed the last answer was correct. ` +

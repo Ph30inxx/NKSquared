@@ -17,6 +17,9 @@ python-dateutil==2.9.0.post0
 fastapi==0.115.6                # same as platform backend
 uvicorn[standard]==0.32.1       # same as platform backend
 
+# ── Auth ─────────────────────────────────────────────────────────────────────
+python-jose[cryptography]==3.3.0  # JWT verification (same algorithm as platform backend)
+
 # ── Config / validation ───────────────────────────────────────────────────────
 python-dotenv==1.0.1            # same as platform backend
 pydantic==2.10.3                # same as platform backend

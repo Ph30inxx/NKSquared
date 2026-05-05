@@ -328,7 +328,7 @@ def check_portfolio_alerts() -> str:
         for cid in ("company_01", "company_02"):
             cur.execute("""
                 SELECT TO_CHAR(month_date,'Mon-YY') AS month,
-                       ROUND(total_income_lacs,2) AS revenue
+                       ROUND(revenue_lacs,2) AS revenue
                 FROM mis_monthly
                 WHERE company_id=%s AND geography='consolidated'
                 ORDER BY month_date DESC LIMIT 2
