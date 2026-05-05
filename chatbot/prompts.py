@@ -3,10 +3,29 @@ System prompts for NKSquared chatbot agents.
 
 Schema context is NOT hardcoded here — it is loaded live from PostgreSQL
 by schema_loader.load_schema_context() and injected at agent-creation time.
-Everything else (company profiles, business rules, seed SQL) is static
-domain knowledge that belongs here.
+Everything else (company profiles, business rules) is static domain
+knowledge that belongs here.
+
+Prompt structure is optimised for Azure OpenAI prefix caching:
+  - Static content (identity, schema, profiles, rules) placed FIRST
+  - Dynamic/conditional content (write rules) appended LAST
+  - The first ~2,500 tokens remain identical across all calls
 """
 from __future__ import annotations
+
+# ── Identity (placed first for Azure prompt prefix caching) ───────────────────
+
+_IDENTITY = (
+    "You are NKSquared Intelligence — the AI assistant for NKSquared, a "
+    "Dubai-based investment firm managing a ~₹5,826 Crore portfolio across "
+    "53+ companies.\n\n"
+    "You answer questions about:\n"
+    "1. The investment portfolio (companies, MOIC, IRR, sectors, transactions, valuations)\n"
+    "2. Monthly financial performance of two portfolio companies tracked via MIS data\n"
+    "3. Cross-cutting analysis combining both investment position and operating performance\n\n"
+    "You also handle greetings and scope questions directly without tool calls.\n"
+    "For ambiguous requests, ask one clarifying question before proceeding.\n"
+)
 
 # ── Static domain knowledge ───────────────────────────────────────────────────
 
@@ -122,10 +141,10 @@ WHERE effective_date=(SELECT MAX(effective_date) FROM forex_rates)
 ORDER BY from_currency;
 """
 
-_TOOL_RULES = """
+_READ_TOOL_RULES = """
 === Tool Usage Guidelines ===
 
-Before writing any SQL, it is recommended to call find_similar_query first — if a validated
+Before writing any SQL, call find_similar_query first — if a validated
 pattern exists for the user's question, adapt it rather than writing from scratch.
 
 Portfolio questions:
@@ -151,7 +170,9 @@ Ad-hoc questions not covered above:
 
 Confirmed correct answers:
   - Call save_validated_query to persist the (question, SQL, explanation)
+"""
 
+_WRITE_TOOL_RULES = """
 === Write Operation Rules ===
 
 The following tools MODIFY the database. Follow these rules without exception.
@@ -164,8 +185,7 @@ Step 1 — Preview first.
   and ask: "Shall I go ahead?"
 
 Step 2 — Execute after confirmation.
-  When the user agrees, or when the Coordinator passes on the user's agreement
-  (e.g. "The user confirmed. Please carry out the operation as described."),
+  When the user agrees (e.g. "yes", "go ahead", "proceed", "do it"),
   call the same tool again with dry_run=False to make the actual change.
   Report the result clearly in one sentence.
 
@@ -213,6 +233,9 @@ AFTER A SUCCESSFUL WRITE:
     "Would you like me to show the updated MOIC?").
 """
 
+# Legacy combined reference (kept for backward compat with analyst.py)
+_TOOL_RULES = _READ_TOOL_RULES + _WRITE_TOOL_RULES
+
 _RESPONSE_FORMAT = """
 === RESPONSE FORMAT ===
 - Monetary values: state the unit — ₹X Cr or ₹X Lacs
@@ -231,6 +254,9 @@ def build_analyst_prompt(schema_context: str) -> str:
     """
     Assemble the full Analyst system prompt by combining the live schema
     snapshot with static domain knowledge.
+
+    (Legacy — used by agents/analyst.py. New code should use
+    build_intelligence_prompt instead.)
     """
     return (
         "You are the NKSquared Investment Intelligence Analyst — the AI assistant for "
@@ -249,17 +275,45 @@ def build_analyst_prompt(schema_context: str) -> str:
     )
 
 
-# Cached prompt — populated on first call to get_analyst_prompt()
+def build_intelligence_prompt(
+    schema_context: str,
+    include_write_rules: bool = True,
+) -> str:
+    """
+    Build the unified Intelligence agent prompt.
+
+    Structure is optimised for Azure OpenAI prompt prefix caching:
+      1. Identity + Schema + Profiles + Business Rules + Read Tool Rules
+         → stable prefix (≥2,500 tokens) — cached automatically by Azure
+      2. Response format
+      3. Write rules (appended only when write tools are active)
+         → variable suffix does not break prefix cache
+    """
+    parts = [
+        # ── STABLE PREFIX (Azure caches this across calls) ──────────
+        _IDENTITY,
+        schema_context,
+        _COMPANY_PROFILES,
+        _BUSINESS_RULES,
+        _READ_TOOL_RULES,
+        _RESPONSE_FORMAT,
+    ]
+    if include_write_rules:
+        parts.append(_WRITE_TOOL_RULES)
+    return "\n".join(parts)
+
+
+# ── Cached prompts ────────────────────────────────────────────────────────────
+
 _analyst_prompt_cache: str | None = None
+_intelligence_read_cache: str | None = None
+_intelligence_write_cache: str | None = None
 _prompt_lock = __import__("threading").Lock()
 
 
 def get_analyst_prompt() -> str:
     """
-    Return the Analyst system prompt, loading the live schema from PostgreSQL
-    on the first call and caching the result for all subsequent calls.
-
-    Call invalidate_prompt_cache() after running migrations to force a refresh.
+    Return the Analyst system prompt (legacy — backward compat).
     """
     global _analyst_prompt_cache
     if _analyst_prompt_cache is not None:
@@ -274,12 +328,41 @@ def get_analyst_prompt() -> str:
     return _analyst_prompt_cache
 
 
+def get_intelligence_prompt(include_write_rules: bool = True) -> str:
+    """
+    Return the Intelligence agent prompt, loading the live schema from
+    PostgreSQL on the first call and caching the result.
+
+    Two variants are cached independently:
+      - read-only  (include_write_rules=False) — ~2,500 tokens lighter
+      - full       (include_write_rules=True)  — includes write rules
+    """
+    global _intelligence_read_cache, _intelligence_write_cache
+    cache_ref = _intelligence_write_cache if include_write_rules else _intelligence_read_cache
+    if cache_ref is not None:
+        return cache_ref
+
+    with _prompt_lock:
+        if include_write_rules and _intelligence_write_cache is None:
+            from chatbot.schema_loader import load_schema_context
+            schema = load_schema_context()
+            _intelligence_write_cache = build_intelligence_prompt(schema, True)
+        elif not include_write_rules and _intelligence_read_cache is None:
+            from chatbot.schema_loader import load_schema_context
+            schema = load_schema_context()
+            _intelligence_read_cache = build_intelligence_prompt(schema, False)
+
+    return _intelligence_write_cache if include_write_rules else _intelligence_read_cache
+
+
 def invalidate_prompt_cache() -> None:
-    """Force a schema reload on the next get_analyst_prompt() call."""
-    global _analyst_prompt_cache
+    """Force a schema reload on the next prompt call."""
+    global _analyst_prompt_cache, _intelligence_read_cache, _intelligence_write_cache
     from chatbot.schema_loader import invalidate_schema_cache
     with _prompt_lock:
         _analyst_prompt_cache = None
+        _intelligence_read_cache = None
+        _intelligence_write_cache = None
     invalidate_schema_cache()
 
 

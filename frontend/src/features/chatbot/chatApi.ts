@@ -7,6 +7,19 @@ function authHeader(): Record<string, string> {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
+// ── Shared Fetch Wrapper ──────────────────────────────────────────────────────
+// Intercept 401 Unauthorized to trigger a global logout, matching Axios behavior
+
+async function fetchChatApi(url: string, init?: RequestInit): Promise<Response> {
+  const headers = { ...authHeader(), ...init?.headers };
+  const res = await fetch(url, { ...init, headers });
+  if (res.status === 401) {
+    useAuthStore.getState().logout();
+    throw new Error("Session expired. Please log in again.");
+  }
+  return res;
+}
+
 // ── Conversation types ────────────────────────────────────────────────────────
 
 export interface Conversation {
@@ -20,35 +33,29 @@ export interface Conversation {
 // ── Conversation CRUD ─────────────────────────────────────────────────────────
 
 export async function listConversations(): Promise<Conversation[]> {
-  const res = await fetch(`${CHAT_BASE}/conversations`, {
-    headers: authHeader(),
-  });
+  const res = await fetchChatApi(`${CHAT_BASE}/conversations`);
   if (!res.ok) throw new Error(`Failed to list conversations: ${res.status}`);
   return res.json();
 }
 
 export async function createConversation(): Promise<{ id: string; session_id: string; title: string }> {
-  const res = await fetch(`${CHAT_BASE}/conversations`, {
+  const res = await fetchChatApi(`${CHAT_BASE}/conversations`, {
     method: "POST",
-    headers: authHeader(),
   });
   if (!res.ok) throw new Error(`Failed to create conversation: ${res.status}`);
   return res.json();
 }
 
 export async function deleteConversation(id: string): Promise<void> {
-  await fetch(`${CHAT_BASE}/conversations/${id}`, {
+  await fetchChatApi(`${CHAT_BASE}/conversations/${id}`, {
     method: "DELETE",
-    headers: authHeader(),
   });
 }
 
 export async function getSessionHistory(
   sessionId: string,
 ): Promise<Array<{ role: string; content: string }>> {
-  const res = await fetch(`${CHAT_BASE}/session/${sessionId}/history`, {
-    headers: authHeader(),
-  });
+  const res = await fetchChatApi(`${CHAT_BASE}/session/${sessionId}/history`);
   if (!res.ok) throw new Error(`Failed to load history: ${res.status}`);
   const data = await res.json();
   return data.messages ?? [];
@@ -76,6 +83,12 @@ export async function sendMessage(
     });
   } catch {
     onError("Could not reach the chatbot service.");
+    return;
+  }
+
+  if (res.status === 401) {
+    useAuthStore.getState().logout();
+    onError("Session expired. Please log in again.");
     return;
   }
 

@@ -157,15 +157,30 @@ def find_similar_query(question: str) -> str:
         """, (question, question))
         matches = [dict(r) for r in cur.fetchall()]
 
-        if matches:
+    # Fire-and-forget: bump used_count off the critical path
+    if matches:
+        import threading
+        threading.Thread(
+            target=_bump_used_count,
+            args=(matches[0]["question"],),
+            daemon=True,
+        ).start()
+
+    return json.dumps({"matches": matches}, default=str)
+
+
+def _bump_used_count(question: str) -> None:
+    """Increment used_count in background — best-effort."""
+    try:
+        with get_conn() as conn, get_cursor(conn) as cur:
             cur.execute("""
                 UPDATE nk_validated_queries
                    SET used_count = used_count + 1, last_used_at = NOW()
                  WHERE question = %s
-            """, (matches[0]["question"],))
+            """, (question,))
             conn.commit()
-
-    return json.dumps({"matches": matches}, default=str)
+    except Exception:
+        pass
 
 
 def save_validated_query(

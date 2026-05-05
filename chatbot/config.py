@@ -23,7 +23,7 @@ AZURE_OPENAI_API_VERSION = os.getenv("AZURE_OPENAI_API_VERSION", "2024-12-01-pre
 
 # ── Agent settings ────────────────────────────────────────────────────────────
 AGENT_SESSION_TABLE     = "agent_sessions"
-AGENT_NUM_HISTORY_RUNS  = 6
+AGENT_NUM_HISTORY_RUNS  = 4
 
 # ── Query safety ──────────────────────────────────────────────────────────────
 SAFE_QUERY_ROW_LIMIT = 500

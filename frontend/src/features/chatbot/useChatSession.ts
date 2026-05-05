@@ -28,15 +28,28 @@ export function useChatSession() {
   const convsRef = useRef<Conversation[]>([]);
   convsRef.current = conversations;
 
+  // Cache loaded histories so switching conversations is instant
+  const historyCache = useRef<Map<string, ChatMessage[]>>(new Map());
+
   const selectConversation = useCallback(async (conv: Conversation) => {
     setActiveConvId(conv.id);
     setSessionId(conv.session_id);
-    setMessages([]);
     setError(null);
 
     // New conversations have no Agno session yet — nothing to load
-    if (conv.title === "New Conversation") return;
+    if (conv.title === "New Conversation") {
+      setMessages([]);
+      return;
+    }
 
+    // Use cached history if available (instant switch)
+    const cached = historyCache.current.get(conv.session_id);
+    if (cached) {
+      setMessages(cached);
+      return;
+    }
+
+    setMessages([]);
     try {
       const history = await getSessionHistory(conv.session_id);
       const mapped: ChatMessage[] = history
@@ -45,6 +58,7 @@ export function useChatSession() {
           role: m.role as "user" | "assistant",
           content: typeof m.content === "string" ? m.content : String(m.content ?? ""),
         }));
+      historyCache.current.set(conv.session_id, mapped);
       setMessages(mapped);
     } catch (err) {
       setError(`Could not load conversation history: ${err instanceof Error ? err.message : err}`);
