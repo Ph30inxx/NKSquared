@@ -132,41 +132,55 @@ def find_similar_query(question: str) -> str:
     Search nk_validated_queries for previously validated SQL patterns matching
     the user's question. ALWAYS call this first for any data question.
 
-    Uses PostgreSQL full-text search (GIN index on the question column).
+    Uses pg_trgm trigram similarity (handles typos, word-order variation, synonyms).
+    Returns matches with similarity >= 0.3, ranked by similarity then used_count.
 
     Args:
         question: The user's natural language question.
 
     Returns:
         JSON with a 'matches' list (up to 3). Each match has:
-        question, sql_query, explanation, tables_used, used_count.
-        Returns empty list when no matches found.
+        question, sql_query, explanation, tables_used, used_count, similarity.
+        Returns empty list when no matches found above threshold.
     """
-    words = [w for w in question.split() if len(w) > 3]
-    if not words:
+    if not question.strip():
         return json.dumps({"matches": []})
-
-    ts_query = " | ".join(words)
 
     with get_conn() as conn, get_cursor(conn) as cur:
         cur.execute("""
-            SELECT question, sql_query, explanation, tables_used, used_count
+            SELECT question, sql_query, explanation, tables_used, used_count,
+                   ROUND(similarity(question, %s)::numeric, 3) AS similarity
             FROM nk_validated_queries
-            WHERE to_tsvector('english', question) @@ to_tsquery('english', %s)
-            ORDER BY used_count DESC, created_at DESC
+            WHERE similarity(question, %s) >= 0.3
+            ORDER BY similarity DESC, used_count DESC
             LIMIT 3
-        """, (ts_query,))
+        """, (question, question))
         matches = [dict(r) for r in cur.fetchall()]
 
-        if matches:
+    # Fire-and-forget: bump used_count off the critical path
+    if matches:
+        import threading
+        threading.Thread(
+            target=_bump_used_count,
+            args=(matches[0]["question"],),
+            daemon=True,
+        ).start()
+
+    return json.dumps({"matches": matches}, default=str)
+
+
+def _bump_used_count(question: str) -> None:
+    """Increment used_count in background — best-effort."""
+    try:
+        with get_conn() as conn, get_cursor(conn) as cur:
             cur.execute("""
                 UPDATE nk_validated_queries
                    SET used_count = used_count + 1, last_used_at = NOW()
                  WHERE question = %s
-            """, (matches[0]["question"],))
+            """, (question,))
             conn.commit()
-
-    return json.dumps({"matches": matches}, default=str)
+    except Exception:
+        pass
 
 
 def save_validated_query(
@@ -189,11 +203,20 @@ def save_validated_query(
         Confirmation string.
     """
     with get_conn() as conn, get_cursor(conn) as cur:
-        cur.execute(
-            "SELECT id FROM nk_validated_queries WHERE question = %s", (question,)
-        )
-        if cur.fetchone():
-            return "Pattern already exists in knowledge base — skipping duplicate."
+        # Fuzzy dedup: skip if a very similar question already exists (>= 0.85 similarity)
+        cur.execute("""
+            SELECT question, ROUND(similarity(question, %s)::numeric, 3) AS sim
+            FROM nk_validated_queries
+            WHERE similarity(question, %s) >= 0.85
+            ORDER BY sim DESC
+            LIMIT 1
+        """, (question, question))
+        existing = cur.fetchone()
+        if existing:
+            return (
+                f"Very similar pattern already exists (similarity {existing['sim']}): "
+                f'"{existing["question"]}" — skipping duplicate.'
+            )
 
         cur.execute("""
             INSERT INTO nk_validated_queries (question, sql_query, explanation, tables_used)

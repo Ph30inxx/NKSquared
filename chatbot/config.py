@@ -23,7 +23,7 @@ AZURE_OPENAI_API_VERSION = os.getenv("AZURE_OPENAI_API_VERSION", "2024-12-01-pre
 
 # ── Agent settings ────────────────────────────────────────────────────────────
 AGENT_SESSION_TABLE     = "agent_sessions"
-AGENT_NUM_HISTORY_RUNS  = 6
+AGENT_NUM_HISTORY_RUNS  = 4
 
 # ── Query safety ──────────────────────────────────────────────────────────────
 SAFE_QUERY_ROW_LIMIT = 500
@@ -31,6 +31,12 @@ SAFE_QUERY_ROW_LIMIT = 500
 # ── Auth (same SECRET_KEY as platform backend) ────────────────────────────────
 JWT_SECRET_KEY = os.getenv("SECRET_KEY", "change-me-in-production")
 JWT_ALGORITHM  = "HS256"
+
+# ── Backend API (write operations) ───────────────────────────────────────────
+# Write tools call the existing FastAPI backend over HTTP, forwarding the
+# analyst's JWT token so all business logic, MOIC recomputation, and audit
+# logging runs through the normal backend service layer.
+BACKEND_API_URL = os.getenv("BACKEND_API_URL", "http://api:8000/api/v1")
 
 # ── Fiscal year ───────────────────────────────────────────────────────────────
 FY_START_MONTH = 4      # April — Indian financial year

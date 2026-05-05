@@ -1,7 +1,10 @@
+import { useState } from "react";
 import Box from "@mui/material/Box";
 import IconButton from "@mui/material/IconButton";
 import Tooltip from "@mui/material/Tooltip";
+import Typography from "@mui/material/Typography";
 import ThumbUpOutlinedIcon from "@mui/icons-material/ThumbUpOutlined";
+import ThumbUpIcon from "@mui/icons-material/ThumbUp";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
@@ -37,12 +40,18 @@ export default function MessageBubble({
   message,
   isStreaming,
   isLast,
-  userQuestion,
+  userQuestion: _userQuestion,
   onThumbsUp,
 }: MessageProps) {
   const isUser = message.role === "user";
   const isTyping = isLast && isStreaming && !isUser;
   const showThumbUp = !isUser && !isTyping && !!message.content;
+  const [thumbedUp, setThumbedUp] = useState(false);
+
+  const handleThumbsUp = () => {
+    setThumbedUp(true);
+    onThumbsUp();
+  };
 
   return (
     <Box
@@ -80,7 +89,7 @@ export default function MessageBubble({
         {isUser ? (
           message.content
         ) : message.content ? (
-          <ReactMarkdown 
+          <ReactMarkdown
             remarkPlugins={[remarkGfm, remarkMath]}
             rehypePlugins={[rehypeKatex]}
           >
@@ -96,11 +105,27 @@ export default function MessageBubble({
       </Box>
 
       {showThumbUp && (
-        <Tooltip title="Mark as correct">
-          <IconButton size="small" onClick={onThumbsUp} sx={{ mt: 0.5, ml: 1 }}>
-            <ThumbUpOutlinedIcon sx={{ fontSize: 16 }} />
-          </IconButton>
-        </Tooltip>
+        <Box sx={{ display: "flex", alignItems: "center", mt: 0.5, ml: 0.5, gap: 0.5 }}>
+          <Tooltip title={thumbedUp ? "Saved to knowledge base" : "Mark as correct"}>
+            <span>
+              <IconButton
+                size="small"
+                onClick={handleThumbsUp}
+                disabled={thumbedUp}
+                sx={{ color: thumbedUp ? "success.main" : "action.active" }}
+              >
+                {thumbedUp
+                  ? <ThumbUpIcon sx={{ fontSize: 16 }} />
+                  : <ThumbUpOutlinedIcon sx={{ fontSize: 16 }} />}
+              </IconButton>
+            </span>
+          </Tooltip>
+          {thumbedUp && (
+            <Typography variant="caption" sx={{ color: "success.main", fontSize: 11 }}>
+              Saved
+            </Typography>
+          )}
+        </Box>
       )}
     </Box>
   );

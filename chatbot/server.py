@@ -9,14 +9,24 @@ Endpoints:
   DELETE /conversations/{id}
   GET    /health
   POST   /admin/reload-schema
+
+Optimisations applied (v2):
+  - Single Agent replaces Coordinator+Analyst Team (−2 LLM round-trips)
+  - Agent instances cached per session (warm model connections)
+  - Connection pooling via ThreadedConnectionPool (no fresh TCP per op)
+  - _touch_conversation() is fire-and-forget (off critical path)
+  - Dynamic tool pruning: write tools loaded only when write intent detected
+  - Prompt structured for Azure OpenAI automatic prefix caching
 """
 import asyncio
+import contextvars
 import json
+import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
 
-import psycopg2
+from agno.agent import Agent
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
@@ -25,13 +35,18 @@ from jose import JWTError, jwt
 from psycopg2.extras import RealDictCursor
 from pydantic import BaseModel
 
-from chatbot.agents.coordinator import create_coordinator
-from chatbot.config import DB_URL_SYNC, JWT_ALGORITHM, JWT_SECRET_KEY
+from chatbot.agents.intelligence import (
+    create_intelligence_agent,
+    needs_write_tools,
+)
+from chatbot.config import JWT_ALGORITHM, JWT_SECRET_KEY
+from chatbot.context import reset_auth_token, set_auth_token
+from chatbot.db import get_conn
 from chatbot.prompts import invalidate_prompt_cache
 
 app = FastAPI(
     title="NKSquared Investment Intelligence Chatbot",
-    version="1.0.0",
+    version="2.0.0",
 )
 
 app.add_middleware(
@@ -67,19 +82,12 @@ class ChatResponse(BaseModel):
     session_id: str
 
 
-# ── DB helper ─────────────────────────────────────────────────────────────────
-
-def _conn():
-    return psycopg2.connect(DB_URL_SYNC)
-
-
 # ── Conversation endpoints ────────────────────────────────────────────────────
 
 @app.get("/conversations")
 async def list_conversations(user_id: int = Depends(get_current_user_id)):
     """Return all conversations for the authenticated user, newest first."""
-    conn = _conn()
-    try:
+    with get_conn() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute(
                 """
@@ -91,18 +99,16 @@ async def list_conversations(user_id: int = Depends(get_current_user_id)):
                 (user_id,),
             )
             rows = cur.fetchall()
-        return [
-            {
-                "id": r["id"],
-                "session_id": r["session_id"],
-                "title": r["title"],
-                "created_at": r["created_at"].isoformat(),
-                "updated_at": r["updated_at"].isoformat(),
-            }
-            for r in rows
-        ]
-    finally:
-        conn.close()
+    return [
+        {
+            "id": r["id"],
+            "session_id": r["session_id"],
+            "title": r["title"],
+            "created_at": r["created_at"].isoformat(),
+            "updated_at": r["updated_at"].isoformat(),
+        }
+        for r in rows
+    ]
 
 
 @app.post("/conversations", status_code=201)
@@ -110,24 +116,20 @@ async def create_conversation(user_id: int = Depends(get_current_user_id)):
     """Create a new conversation and return its id and session_id."""
     conv_id = str(uuid.uuid4())
     session_id = str(uuid.uuid4())
-    conn = _conn()
-    try:
+    with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
                 "INSERT INTO chat_conversations (id, session_id, user_id, title) VALUES (%s, %s, %s, %s)",
                 (conv_id, session_id, user_id, "New Conversation"),
             )
         conn.commit()
-    finally:
-        conn.close()
     return {"id": conv_id, "session_id": session_id, "title": "New Conversation"}
 
 
 @app.delete("/conversations/{conv_id}", status_code=204)
 async def delete_conversation(conv_id: str, user_id: int = Depends(get_current_user_id)):
     """Delete a conversation owned by the authenticated user."""
-    conn = _conn()
-    try:
+    with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
                 "DELETE FROM chat_conversations WHERE id = %s AND user_id = %s",
@@ -136,21 +138,111 @@ async def delete_conversation(conv_id: str, user_id: int = Depends(get_current_u
             if cur.rowcount == 0:
                 raise HTTPException(status_code=404, detail="Conversation not found")
         conn.commit()
-    finally:
-        conn.close()
+
+
+# ── Agent cache ───────────────────────────────────────────────────────────────
+# Agents are cached per session_id to reuse warm Azure OpenAI HTTP pools,
+# SQLTools engines, and PostgresDb storage objects across turns.
+
+_agent_cache: dict[str, tuple[Agent, bool]] = {}  # session_id → (agent, has_write_tools)
+_cache_lock = threading.Lock()
+_MAX_CACHED_AGENTS = 100
+
+
+def _get_or_create_agent(session_id: str, include_write: bool = False) -> Agent:
+    """
+    Return a cached agent for this session, creating one if needed.
+
+    If a read-only agent is cached but write tools are now needed,
+    the agent is recreated with the full tool set. Both share the same
+    session storage table so conversation history is preserved.
+    """
+    cached = _agent_cache.get(session_id)
+    if cached:
+        agent, has_write = cached
+        if not include_write or has_write:
+            return agent
+        # Need write tools but cached agent is read-only — recreate
+
+    with _cache_lock:
+        # Double-check under lock
+        cached = _agent_cache.get(session_id)
+        if cached:
+            agent, has_write = cached
+            if not include_write or has_write:
+                return agent
+
+        # Evict oldest if at capacity
+        if len(_agent_cache) >= _MAX_CACHED_AGENTS:
+            oldest_key = next(iter(_agent_cache))
+            del _agent_cache[oldest_key]
+
+        agent = create_intelligence_agent(
+            session_id=session_id,
+            include_write_tools=include_write,
+        )
+        _agent_cache[session_id] = (agent, include_write)
+        return agent
 
 
 # ── Thread pool for blocking Agno calls ──────────────────────────────────────
-# coordinator.run() is synchronous (Agno framework). Running it directly inside
-# an async handler blocks the event loop, stalling all other requests and
-# causing the Vite proxy / Azure to drop the connection on long queries.
+# Agent.run() is synchronous (Agno framework). Running it directly inside
+# an async handler blocks the event loop, stalling all other requests.
 _thread_pool = ThreadPoolExecutor(max_workers=10)
+
+
+# ── Greeting / chitchat fast-path ─────────────────────────────────────────────
+# Bypass the entire LLM pipeline for trivial messages. Saves a full LLM
+# round-trip (~2-4s) that would only produce a canned greeting anyway.
+
+_GREETING_PATTERNS = frozenset({
+    "hi", "hey", "hello", "hii", "hiii", "yo", "sup",
+    "good morning", "good afternoon", "good evening",
+    "gm", "morning", "afternoon", "evening",
+})
+
+_THANKS_PATTERNS = frozenset({
+    "thanks", "thank you", "thankyou", "thx", "ty",
+    "thanks!", "thank you!", "great thanks", "perfect thanks",
+    "awesome thanks", "ok thanks", "okay thanks",
+    "cool", "got it", "noted", "ok", "okay", "alright",
+})
+
+_SCOPE_PATTERNS = frozenset({
+    "what can you do", "what do you do", "who are you",
+    "help", "what are you", "what is this",
+})
+
+_GREETING_RESPONSE = (
+    "Hello! 👋 I'm the NKSquared Investment Intelligence assistant. I can help you with:\n\n"
+    "• **Portfolio overview** — MOIC, IRR, sector breakdown, alerts\n"
+    "• **Company deep-dives** — valuations, transactions, performance\n"
+    "• **MIS data** — revenue, EBITDA, BU/outlet breakdowns, trends\n"
+    "• **Write operations** — log transactions, update companies, correct data\n\n"
+    "What would you like to know?"
+)
+
+_THANKS_RESPONSE = "You're welcome! Let me know if you need anything else. 😊"
+
+_SCOPE_RESPONSE = _GREETING_RESPONSE  # Same helpful message
+
+
+def _check_fast_path(message: str) -> str | None:
+    """Return an instant response for trivial messages, or None to proceed to the agent."""
+    normalised = message.strip().lower().rstrip("!?.").strip()
+    if normalised in _GREETING_PATTERNS:
+        return _GREETING_RESPONSE
+    if normalised in _THANKS_PATTERNS:
+        return _THANKS_RESPONSE
+    if normalised in _SCOPE_PATTERNS:
+        return _SCOPE_RESPONSE
+    return None
 
 
 # ── Chat endpoint ─────────────────────────────────────────────────────────────
 
 @app.post("/chat")
-async def chat(request: ChatRequest, _: int = Depends(get_current_user_id)):
+async def chat(request: ChatRequest, creds: HTTPAuthorizationCredentials = Depends(_bearer)):
     """
     Text chat endpoint.
 
@@ -161,80 +253,119 @@ async def chat(request: ChatRequest, _: int = Depends(get_current_user_id)):
     Pass the same session_id across turns to maintain conversation context.
     Omit it (or send null) to start a new conversation.
     """
+    # Validate JWT (inlined so we have the raw token for write tools).
+    try:
+        payload = jwt.decode(creds.credentials, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
+        if payload.get("type") != "access":
+            raise HTTPException(status_code=401, detail="Invalid token type")
+        int(payload["sub"])
+    except (JWTError, KeyError, ValueError):
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
     session_id = request.session_id or str(uuid.uuid4())
-    coordinator = create_coordinator(session_id=session_id)
 
-    _touch_conversation(session_id, request.message)
+    # ── Fast-path: greetings, thanks, meta-questions ──────────────────────
+    # No LLM call, no tool loading, no DB hit — instant response.
+    fast_reply = _check_fast_path(request.message)
+    if fast_reply:
+        _thread_pool.submit(_touch_conversation, session_id, request.message)
+        if request.stream:
+            async def _greeting_stream():
+                yield f"data: {json.dumps(fast_reply)}\n\n"
+                yield "data: [DONE]\n\n"
+            return StreamingResponse(
+                _greeting_stream(),
+                media_type="text/event-stream",
+                headers={"X-Session-ID": session_id},
+            )
+        return ChatResponse(response=fast_reply, session_id=session_id)
 
-    if request.stream:
-        loop = asyncio.get_event_loop()
-        queue: asyncio.Queue[str | None] = asyncio.Queue()
+    # ── Full agent pipeline ───────────────────────────────────────────────
+    # Store raw token in context var for write tools.
+    _tok = set_auth_token(creds.credentials)
 
-        def _produce():
-            try:
-                for chunk in coordinator.run(input=request.message, stream=True):
-                    event_type = getattr(chunk, "event", None)
-                    if event_type in ("run_response_content", "team_run_content", "TeamRunContent"):
+    try:
+        # Detect write intent for dynamic tool pruning
+        include_write = needs_write_tools(request.message)
+        agent = _get_or_create_agent(session_id, include_write=include_write)
+
+        # Fire-and-forget: update conversation metadata off the critical path
+        _thread_pool.submit(_touch_conversation, session_id, request.message)
+
+        if request.stream:
+            loop = asyncio.get_event_loop()
+            queue: asyncio.Queue[str | None] = asyncio.Queue()
+
+            def _produce():
+                try:
+                    for chunk in agent.run(input=request.message, stream=True):
                         content = getattr(chunk, "content", None)
                         if content:
                             loop.call_soon_threadsafe(
                                 queue.put_nowait, f"data: {json.dumps(content)}\n\n"
                             )
-            except Exception as exc:
-                loop.call_soon_threadsafe(queue.put_nowait, f"data: [ERROR] {exc}\n\n")
-            finally:
-                loop.call_soon_threadsafe(queue.put_nowait, None)  # sentinel
+                except Exception as exc:
+                    loop.call_soon_threadsafe(queue.put_nowait, f"data: [ERROR] {exc}\n\n")
+                finally:
+                    loop.call_soon_threadsafe(queue.put_nowait, None)  # sentinel
 
-        _thread_pool.submit(_produce)
+            # copy_context() snapshots ContextVar values (including _auth_token)
+            # so they are visible inside the thread-pool thread.
+            _thread_pool.submit(contextvars.copy_context().run, _produce)
 
-        async def generate():
-            while True:
-                item = await queue.get()
-                if item is None:
-                    break
-                yield item
-            yield "data: [DONE]\n\n"
+            async def generate():
+                while True:
+                    item = await queue.get()
+                    if item is None:
+                        break
+                    yield item
+                yield "data: [DONE]\n\n"
 
-        return StreamingResponse(
-            generate(),
-            media_type="text/event-stream",
-            headers={"X-Session-ID": session_id},
+            return StreamingResponse(
+                generate(),
+                media_type="text/event-stream",
+                headers={"X-Session-ID": session_id},
+            )
+
+        # Non-streaming path
+        result = await asyncio.get_event_loop().run_in_executor(
+            _thread_pool, lambda: agent.run(input=request.message, stream=False)
         )
+        return ChatResponse(response=result.content, session_id=session_id)
 
-    result = await asyncio.get_event_loop().run_in_executor(
-        _thread_pool, lambda: coordinator.run(input=request.message, stream=False)
-    )
-    return ChatResponse(response=result.content, session_id=session_id)
+    finally:
+        reset_auth_token(_tok)
 
 
 def _touch_conversation(session_id: str, message: str) -> None:
-    """Update updated_at; set title from first user message if still default."""
-    conn = _conn()
+    """Update updated_at; set title from first user message if still default.
+
+    Runs in background thread — errors are swallowed to avoid breaking chat.
+    """
     try:
-        with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            cur.execute(
-                "SELECT title FROM chat_conversations WHERE session_id = %s",
-                (session_id,),
-            )
-            row = cur.fetchone()
-            if not row:
-                return
-            if row["title"] == "New Conversation" and not message.startswith("[SYSTEM:"):
-                title = message[:60].replace("\n", " ")
+        with get_conn() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute(
-                    "UPDATE chat_conversations SET title = %s, updated_at = NOW() WHERE session_id = %s",
-                    (title, session_id),
-                )
-            else:
-                cur.execute(
-                    "UPDATE chat_conversations SET updated_at = NOW() WHERE session_id = %s",
+                    "SELECT title FROM chat_conversations WHERE session_id = %s",
                     (session_id,),
                 )
-        conn.commit()
+                row = cur.fetchone()
+                if not row:
+                    return
+                if row["title"] == "New Conversation" and not message.startswith("[SYSTEM:"):
+                    title = message[:60].replace("\n", " ")
+                    cur.execute(
+                        "UPDATE chat_conversations SET title = %s, updated_at = NOW() WHERE session_id = %s",
+                        (title, session_id),
+                    )
+                else:
+                    cur.execute(
+                        "UPDATE chat_conversations SET updated_at = NOW() WHERE session_id = %s",
+                        (session_id,),
+                    )
+            conn.commit()
     except Exception:
         pass  # best-effort; don't break chat on a metadata failure
-    finally:
-        conn.close()
 
 
 # ── Utility endpoints ─────────────────────────────────────────────────────────
@@ -258,12 +389,12 @@ def _extract_content(content) -> str:
 async def session_history(session_id: str, _: int = Depends(get_current_user_id)):
     """Return the stored conversation history for a session.
 
-    Uses Team.get_chat_history() which is the correct Agno v2 API for Teams
-    (Agents use get_messages_for_session() — different method).
+    Uses a cached agent when available to avoid rebuilding the full agent
+    tree just to read stored messages.
     """
-    coordinator = create_coordinator(session_id=session_id)
+    agent = _get_or_create_agent(session_id, include_write=False)
     try:
-        raw = coordinator.get_chat_history(session_id=session_id) or []
+        raw = agent.get_session_messages(session_id=session_id) or []
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 
@@ -285,5 +416,8 @@ async def health():
 @app.post("/admin/reload-schema")
 async def reload_schema(_: int = Depends(get_current_user_id)):
     """Force schema context and prompt cache to reload on next request."""
+    # Also clear the agent cache so agents pick up the new prompts
+    with _cache_lock:
+        _agent_cache.clear()
     invalidate_prompt_cache()
     return {"status": "schema cache cleared — will reload on next request"}

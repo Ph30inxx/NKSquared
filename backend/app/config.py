@@ -9,7 +9,7 @@ class Settings(BaseSettings):
 
     SECRET_KEY: str = "change-me-in-production"
     JWT_ALGORITHM: str = "HS256"
-    JWT_ACCESS_TOKEN_EXPIRES_MIN: int = 15
+    JWT_ACCESS_TOKEN_EXPIRES_MIN: int = 720  # 12 hours
     JWT_REFRESH_TOKEN_EXPIRES_DAYS: int = 7
 
     FRONTEND_URL: str = "http://localhost:5173"

@@ -35,6 +35,18 @@ from chatbot.tools.shared import (
     find_similar_query,
     save_validated_query,
 )
+from chatbot.tools.write import (
+    log_transaction,
+    add_valuation,
+    update_company,
+    upsert_forex_rate,
+    send_mis_reminder,
+    create_company,
+    manage_reminder_schedule,
+    correct_transaction,
+    correct_mis_metric,
+    deactivate_company,
+)
 
 
 def _make_model() -> AzureOpenAI:
@@ -100,6 +112,18 @@ def create_analyst() -> Agent:
 
             # Step 6: full SQL for complex joins / edge cases
             SQLTools(db_url=DB_URL_SYNC),
+
+            # Step 7: write tools (all require dry_run=True confirmation first)
+            log_transaction,
+            add_valuation,
+            update_company,
+            upsert_forex_rate,
+            send_mis_reminder,
+            create_company,
+            manage_reminder_schedule,
+            correct_transaction,
+            correct_mis_metric,
+            deactivate_company,
         ],
 
         instructions=get_analyst_prompt(),
