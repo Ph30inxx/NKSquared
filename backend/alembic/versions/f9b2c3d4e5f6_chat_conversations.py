@@ -1,14 +1,14 @@
 """add chat_conversations table
 
-Revision ID: e5f6a7b8c9d0
-Revises: d4e5f6a7b8c9
+Revision ID: f9b2c3d4e5f6
+Revises: f6a7b8c9d0e1
 Create Date: 2026-05-04
 """
 from alembic import op
 import sqlalchemy as sa
 
-revision = "e5f6a7b8c9d0"
-down_revision = "d4e5f6a7b8c9"
+revision = "f9b2c3d4e5f6"
+down_revision = "f6a7b8c9d0e1"
 branch_labels = None
 depends_on = None
 
