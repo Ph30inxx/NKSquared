@@ -8,6 +8,7 @@ from app.models.mis import (
     MisOutletMonthly,
     MisSubmission,
 )
+from app.models.mis_template import MisTemplate
 from app.models.portfolio_category import PortfolioCategory
 from app.models.reminder import ReminderLog, ReminderSchedule
 from app.models.transaction import PortfolioTransaction
@@ -22,6 +23,7 @@ __all__ = [
     "MisMonthly",
     "MisOutletMonthly",
     "MisSubmission",
+    "MisTemplate",
     "PortfolioCategory",
     "PortfolioCompany",
     "PortfolioTransaction",

@@ -26,6 +26,9 @@ class CompanyBase(BaseModel):
     current_value_cr: Decimal | None = None
     currency: str = Field(default="INR", min_length=3, max_length=10)
     reporting_frequency: str = Field(default="Monthly", max_length=20)
+    primary_contact_name: str | None = Field(default=None, max_length=120)
+    primary_contact_email: str | None = Field(default=None, max_length=255)
+    escalation_contact_email: str | None = Field(default=None, max_length=255)
     notes: str | None = None
 
 
@@ -47,6 +50,9 @@ class CompanyUpdate(BaseModel):
     current_value_cr: Decimal | None = None
     currency: str | None = Field(default=None, min_length=3, max_length=10)
     reporting_frequency: str | None = Field(default=None, max_length=20)
+    primary_contact_name: str | None = Field(default=None, max_length=120)
+    primary_contact_email: str | None = Field(default=None, max_length=255)
+    escalation_contact_email: str | None = Field(default=None, max_length=255)
     notes: str | None = None
 
 
@@ -78,6 +84,9 @@ class CompanyListItem(BaseModel):
 
 class CompanyResponse(CompanyListItem):
     reporting_frequency: str
+    primary_contact_name: str | None
+    primary_contact_email: str | None
+    escalation_contact_email: str | None
     created_at: datetime
     updated_at: datetime
 

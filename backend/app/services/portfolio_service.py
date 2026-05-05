@@ -1,13 +1,17 @@
 """Portfolio-level rollups: by sector, vintage, category, plus the headline
 dashboard payload that the home page displays.
+
+Sprint 8 perf pass: `summary`, `by_sector`, and `by_category` now read from
+the `portfolio_aggregates_mv` materialized view (defined in the initial
+migration, refreshed every 5 minutes by `app.tasks.aggregates`). `by_vintage`
+remains a Python rollup since vintage isn't materialized.
 """
 from __future__ import annotations
 
-from collections import defaultdict
 from dataclasses import dataclass
 from decimal import Decimal
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
 from app.models.company import PortfolioCompany
@@ -72,7 +76,41 @@ def _active_companies(db: Session) -> list[PortfolioCompany]:
     )
 
 
+def _read_mv_buckets(db: Session, scope_type: str) -> list[Bucket] | None:
+    """Read the matching scope from `portfolio_aggregates_mv`. Returns None if
+    not on Postgres (SQLite tests) so callers can fall back to the Python
+    rollup without dirtying the active session."""
+    if db.bind is None or db.bind.dialect.name != "postgresql":
+        return None
+    rows = db.execute(
+        text(
+            """
+            SELECT scope_value, total_invested_cr, current_value_cr, moic, company_count
+            FROM portfolio_aggregates_mv
+            WHERE scope_type = :scope_type
+            """
+        ),
+        {"scope_type": scope_type},
+    ).all()
+
+    out = [
+        Bucket(
+            key=r.scope_value or "Unknown",
+            invested_cr=Decimal(r.total_invested_cr) if r.total_invested_cr is not None else Decimal(0),
+            current_cr=Decimal(r.current_value_cr) if r.current_value_cr is not None else Decimal(0),
+            weighted_moic=Decimal(r.moic) if r.moic is not None else None,
+            count=int(r.company_count or 0),
+        )
+        for r in rows
+    ]
+    out.sort(key=lambda x: x.invested_cr, reverse=True)
+    return out
+
+
 def by_sector(db: Session) -> list[Bucket]:
+    cached = _read_mv_buckets(db, "SECTOR")
+    if cached is not None:
+        return cached
     buckets: dict[str, dict] = {}
     for c in _active_companies(db):
         _bucket_company(
@@ -82,6 +120,9 @@ def by_sector(db: Session) -> list[Bucket]:
 
 
 def by_category(db: Session) -> list[Bucket]:
+    cached = _read_mv_buckets(db, "PORTFOLIO_TYPE")
+    if cached is not None:
+        return cached
     buckets: dict[str, dict] = {}
     for c in _active_companies(db):
         _bucket_company(
@@ -110,6 +151,33 @@ def by_vintage(db: Session) -> list[Bucket]:
 
 
 def summary(db: Session) -> dict:
+    pending = db.execute(
+        select(func.count())
+        .select_from(MisSubmission)
+        .where(MisSubmission.status.in_(_PENDING_STATUSES))
+    ).scalar_one()
+
+    row = None
+    if db.bind is not None and db.bind.dialect.name == "postgresql":
+        row = db.execute(
+            text(
+                """
+                SELECT total_invested_cr, current_value_cr, moic, company_count
+                FROM portfolio_aggregates_mv
+                WHERE scope_type = 'TOTAL'
+                """
+            )
+        ).first()
+
+    if row is not None:
+        return {
+            "total_invested_cr": Decimal(row.total_invested_cr or 0),
+            "current_value_cr": Decimal(row.current_value_cr or 0),
+            "weighted_moic": Decimal(row.moic) if row.moic is not None else None,
+            "company_count": int(row.company_count or 0),
+            "pending_mis_count": pending,
+        }
+
     invested = Decimal(0)
     current = Decimal(0)
     count = 0
@@ -120,11 +188,6 @@ def summary(db: Session) -> dict:
         if c.current_value_cr is not None:
             current += c.current_value_cr
     weighted_moic = current / invested if invested != 0 else None
-    pending = db.execute(
-        select(func.count())
-        .select_from(MisSubmission)
-        .where(MisSubmission.status.in_(_PENDING_STATUSES))
-    ).scalar_one()
     return {
         "total_invested_cr": invested,
         "current_value_cr": current,

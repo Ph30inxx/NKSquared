@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import AddIcon from "@mui/icons-material/Add";
+import FileDownloadIcon from "@mui/icons-material/FileDownload";
+import RuleIcon from "@mui/icons-material/Rule";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Chip from "@mui/material/Chip";
@@ -25,6 +27,7 @@ import {
   useMisSubmissions,
 } from "../../api/mis";
 import { formatDate } from "../../utils/format";
+import BulkExportDialog from "./BulkExportDialog";
 import MisUploadDialog from "./MisUploadDialog";
 
 const STATUS_COLOR: Record<
@@ -51,6 +54,7 @@ export default function MisInboxPage() {
   const [statusFilter, setStatusFilter] = useState<MisSubmissionStatus | "All">("All");
   const [companyFilter, setCompanyFilter] = useState("");
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
 
   const { data, isLoading } = useMisSubmissions({
     limit: rowsPerPage,
@@ -65,13 +69,29 @@ export default function MisInboxPage() {
         <Typography variant="h4" component="h1">
           MIS Inbox
         </Typography>
-        <Button
-          variant="contained"
-          startIcon={<AddIcon />}
-          onClick={() => setUploadOpen(true)}
-        >
-          New submission
-        </Button>
+        <Stack direction="row" spacing={1}>
+          <Button
+            variant="outlined"
+            startIcon={<RuleIcon />}
+            onClick={() => navigate("/mis/templates")}
+          >
+            Templates
+          </Button>
+          <Button
+            variant="outlined"
+            startIcon={<FileDownloadIcon />}
+            onClick={() => setExportOpen(true)}
+          >
+            Bulk export
+          </Button>
+          <Button
+            variant="contained"
+            startIcon={<AddIcon />}
+            onClick={() => setUploadOpen(true)}
+          >
+            New submission
+          </Button>
+        </Stack>
       </Stack>
 
       <Paper sx={{ p: 2 }}>
@@ -181,6 +201,7 @@ export default function MisInboxPage() {
       </Paper>
 
       <MisUploadDialog open={uploadOpen} onClose={() => setUploadOpen(false)} />
+      <BulkExportDialog open={exportOpen} onClose={() => setExportOpen(false)} />
     </Stack>
   );
 }

@@ -14,5 +14,16 @@ class Settings(BaseSettings):
 
     FRONTEND_URL: str = "http://localhost:5173"
 
+    SMTP_HOST: str = "mailhog"
+    SMTP_PORT: int = 1025
+    SMTP_USERNAME: str | None = None
+    SMTP_PASSWORD: str | None = None
+    SMTP_USE_TLS: bool = False
+    EMAIL_FROM: str = "noreply@nksquared.local"
+    EMAIL_FROM_NAME: str = "NKSquared"
+    FUND_NAME: str = "NKSquared"
+    PUBLIC_UPLOAD_BASE_URL: str = "http://localhost:5173"
+    REMINDER_TOKEN_TTL_DAYS: int = 30
+
 
 settings = Settings()

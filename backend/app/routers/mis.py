@@ -117,6 +117,7 @@ def get_submission(
 async def upload_file(
     submission_id: int,
     file: UploadFile = File(...),
+    template_id: int | None = Query(None, description="Override the template used to parse"),
     db: Session = Depends(get_db),
     user: User = Depends(_writer),
 ) -> MisSubmission:
@@ -127,7 +128,12 @@ async def upload_file(
     if len(content) > _MAX_UPLOAD_BYTES:
         raise HTTPException(status_code=413, detail="File exceeds 25 MB cap")
     return mis_service.attach_file(
-        db, submission, content=content, filename=file.filename or "upload.xlsx", user_id=user.id
+        db,
+        submission,
+        content=content,
+        filename=file.filename or "upload.xlsx",
+        user_id=user.id,
+        template_id=template_id,
     )
 
 
@@ -141,7 +147,7 @@ def preview(
     if submission.source_file_url is None:
         raise HTTPException(status_code=400, detail="Submission has no uploaded file yet")
     try:
-        template, parsed = mis_service.preview_submission(submission)
+        template, parsed = mis_service.preview_submission(submission, db=db)
     except UnknownTemplateError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     sample = [

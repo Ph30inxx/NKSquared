@@ -14,6 +14,7 @@ from app.schemas.transaction import (
 from app.services import fx_service
 from app.services.audit_service import record_audit
 from app.services.metrics_service import recompute_company_metrics
+from app.tasks.aggregates import schedule_refresh
 
 _AUDIT_ENTITY = "portfolio_transaction"
 _ZERO = Decimal("0")
@@ -114,6 +115,7 @@ def create_transaction(
     )
     recompute_company_metrics(db, company_id)
     db.commit()
+    schedule_refresh()
     db.refresh(txn)
     return txn
 
@@ -208,6 +210,7 @@ def update_transaction(
     db.flush()
     recompute_company_metrics(db, txn.company_id)
     db.commit()
+    schedule_refresh()
     db.refresh(txn)
     return txn
 
@@ -227,6 +230,7 @@ def delete_transaction(db: Session, txn: PortfolioTransaction, *, user_id: int) 
     db.flush()
     recompute_company_metrics(db, company_id)
     db.commit()
+    schedule_refresh()
     return company_id
 
 
