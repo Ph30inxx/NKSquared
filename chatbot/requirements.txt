@@ -23,6 +23,9 @@ uvicorn[standard]==0.32.1       # same as platform backend
 # ── Auth ─────────────────────────────────────────────────────────────────────
 python-jose[cryptography]==3.3.0  # JWT verification (same algorithm as platform backend)
 
+# ── Voice / Redis ─────────────────────────────────────────────────────────────
+redis[asyncio]>=5.0.0              # async Redis client for voice call session store
+
 # ── Config / validation ───────────────────────────────────────────────────────
 python-dotenv==1.0.1            # same as platform backend
 pydantic==2.10.3                # same as platform backend

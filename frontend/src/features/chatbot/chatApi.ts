@@ -126,6 +126,25 @@ export async function sendMessage(
 }
 
 /**
+ * Request Vapi credentials + context to start a voice call.
+ * The backend mints the session and returns the Vapi public key and assistant ID.
+ */
+export async function startVoiceSession(sessionId: string): Promise<{
+  vapi_public_key: string;
+  assistant_id: string;
+  user_id: number;
+  session_id: string;
+}> {
+  const res = await fetch(`${CHAT_BASE}/voice/session`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeader() },
+    body: JSON.stringify({ session_id: sessionId }),
+  });
+  if (!res.ok) throw new Error(`Failed to start voice session: ${res.status}`);
+  return res.json();
+}
+
+/**
  * Signal that the last answer was correct (thumbs-up).
  * Sends a hidden system directive — the agent saves the validated query.
  */

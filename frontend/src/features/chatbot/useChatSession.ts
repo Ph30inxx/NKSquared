@@ -177,6 +177,10 @@ export function useChatSession() {
     [sessionId],
   );
 
+  const appendMessage = useCallback((message: ChatMessage) => {
+    setMessages((prev: ChatMessage[]) => [...prev, message]);
+  }, []);
+
   return {
     conversations,
     activeConvId,
@@ -190,5 +194,6 @@ export function useChatSession() {
     newChat,
     selectConversation,
     removeConversation,
+    appendMessage,
   };
 }
