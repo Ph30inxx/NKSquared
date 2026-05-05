@@ -170,6 +170,76 @@ Ad-hoc questions not covered above:
 
 Confirmed correct answers:
   - Call save_validated_query to persist the (question, SQL, explanation)
+
+Synthesis / opinion questions about a single company:
+  - "should we be concerned about X?", "is X worth a follow-on?",
+    "how is X doing overall?", "give me your read on X"
+                                        → use the INSIGHT FRAMEWORK below
+"""
+
+_INSIGHT_FRAMEWORK = """
+=== INSIGHT FRAMEWORK (synthesis questions) ===
+
+Trigger this framework when the user asks for an investment opinion or
+judgment about a single company, e.g.:
+  - "Should NKSquared be concerned about Company_01?"
+  - "Is Company_02 worth a follow-on?"
+  - "How is Company_01 doing overall?"
+  - "Give me your read on Company_02."
+  - "Flag any concerns about <company>."
+
+Do NOT trigger for narrow factual queries (single metric, single period,
+listings, comparisons across many companies). Those should answer directly
+via the existing tools.
+
+GATHERING STEP — call these tools first, in this order, before writing prose:
+  1. get_company_portfolio_detail(company_name)
+       → invested capital, current value, MOIC, status, vehicle, asset class
+  2. calculate_irr(company_name)
+       → XIRR (only if the company has cash flows)
+  3. get_company_trend(company_id, period="FY26")
+       → revenue + EBITDA trajectory, MoM changes
+  4. get_mis_recent_summary(company_id)
+       → latest-month vs prior-month flags
+  5. check_portfolio_alerts()
+       → confirm whether this company is currently flagged
+
+Use Company_01 = 'company_01' and Company_02 = 'company_02' for the MIS
+tools (VARCHAR, not integer).
+
+OUTPUT FORMAT — produce exactly these five sections, in this order, as
+markdown subheadings:
+
+  ### Investment Position
+  Invested capital (₹X Cr), current value (₹Y Cr), MOIC (Zx),
+  IRR (W%), portfolio type / vehicle, status.
+
+  ### Operating Performance
+  Revenue trend over the period (with direction and magnitude),
+  EBITDA trajectory, gross/EBITDA margin direction, any geography
+  or BU-level note that materially shifts the picture.
+
+  ### Key Strengths
+  2–4 bullets. What is genuinely working — back each point with a number
+  drawn from the tool calls above.
+
+  ### Key Concerns
+  2–4 bullets. What needs watching — back each point with a number.
+  If there are no real concerns, say so in one line; do not invent.
+
+  ### Verdict
+  Exactly one sentence in this shape:
+    "NKSquared should [be concerned about / hold steady on /
+     consider a follow-on for / flag for review] <Company> because …"
+  Pick the bracketed phrase that best matches the data; do not hedge with
+  multiple options.
+
+RULES:
+  - Every number you cite must come from a tool call made in this turn.
+  - Do not invent strengths, concerns, or verdicts that the data does not support.
+  - If a required tool errored or returned no data, state that explicitly
+    in the relevant section rather than skipping it.
+  - Keep the whole response under ~350 words; this is a briefing, not an essay.
 """
 
 _WRITE_TOOL_RULES = """
@@ -271,6 +341,7 @@ def build_analyst_prompt(schema_context: str) -> str:
         + _BUSINESS_RULES + "\n"
         + _SEED_SQL_EXAMPLES + "\n"
         + _TOOL_RULES + "\n"
+        + _INSIGHT_FRAMEWORK + "\n"
         + _RESPONSE_FORMAT
     )
 
@@ -296,6 +367,7 @@ def build_intelligence_prompt(
         _COMPANY_PROFILES,
         _BUSINESS_RULES,
         _READ_TOOL_RULES,
+        _INSIGHT_FRAMEWORK,
         _RESPONSE_FORMAT,
     ]
     if include_write_rules:
