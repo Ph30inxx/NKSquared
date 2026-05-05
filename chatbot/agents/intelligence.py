@@ -96,6 +96,17 @@ WRITE_KEYWORDS = frozenset({
 })
 
 
+# ── Shared instances ──────────────────────────────────────────────────────────
+# Instantiated once at module load to reuse the same SQLAlchemy engine
+# and connection pool across all requests/agent instances.
+_DB = PostgresDb(
+    session_table=f"{AGENT_SESSION_TABLE}_intelligence",
+    db_url=DB_URL_SYNC,
+)
+
+_SQL_TOOLS = SQLTools(db_url=DB_URL_SYNC)
+
+
 def needs_write_tools(message: str) -> bool:
     """Quick heuristic check for write intent in a user message."""
     words = set(message.lower().split())
@@ -133,14 +144,9 @@ def create_intelligence_agent(
         include_write_tools: If True, register write tools alongside read tools.
             Reduces tool token overhead by ~50% on read-only queries.
     """
-    db = PostgresDb(
-        session_table=f"{AGENT_SESSION_TABLE}_intelligence",
-        db_url=DB_URL_SYNC,
-    )
-
     tools = list(_READ_TOOLS)
     # Full SQL for complex joins / edge cases
-    tools.append(SQLTools(db_url=DB_URL_SYNC))
+    tools.append(_SQL_TOOLS)
     if include_write_tools:
         tools.extend(_WRITE_TOOLS)
 
@@ -151,7 +157,7 @@ def create_intelligence_agent(
 
         instructions=[get_intelligence_prompt(include_write_rules=include_write_tools)],
 
-        db=db,
+        db=_DB,
         session_id=session_id,
         add_history_to_context=True,
         num_history_runs=AGENT_NUM_HISTORY_RUNS,

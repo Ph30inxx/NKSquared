@@ -110,9 +110,18 @@ services:
       AZURE_OPENAI_API_KEY:     ${AZURE_OPENAI_API_KEY}
       AZURE_OPENAI_DEPLOYMENT:  ${AZURE_OPENAI_DEPLOYMENT}
       AZURE_OPENAI_API_VERSION: ${AZURE_OPENAI_API_VERSION}
+      # Voice / Vapi
+      REDIS_URL:                   redis://redis:6379/0
+      VAPI_SHARED_SECRET:          ${VAPI_SHARED_SECRET:-}
+      VAPI_ASSISTANT_ID:           ${VAPI_ASSISTANT_ID:-}
+      VAPI_PUBLIC_KEY:             ${VAPI_PUBLIC_KEY:-}
+      VOICE_COMPRESSOR_DEPLOYMENT:  ${VOICE_COMPRESSOR_DEPLOYMENT:-}
+      VOICE_COMPRESSOR_API_VERSION: ${VOICE_COMPRESSOR_API_VERSION:-}
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_started
     restart: unless-stopped
 
 volumes:

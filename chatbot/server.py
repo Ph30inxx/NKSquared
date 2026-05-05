@@ -42,7 +42,9 @@ from chatbot.agents.intelligence import (
 from chatbot.config import JWT_ALGORITHM, JWT_SECRET_KEY
 from chatbot.context import reset_auth_token, set_auth_token
 from chatbot.db import get_conn
+from chatbot.auth import _bearer, get_current_user_id
 from chatbot.prompts import invalidate_prompt_cache
+from chatbot.voice.router import router as voice_router
 
 app = FastAPI(
     title="NKSquared Investment Intelligence Chatbot",
@@ -56,17 +58,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-_bearer = HTTPBearer()
+app.include_router(voice_router)
 
-
-def get_current_user_id(creds: HTTPAuthorizationCredentials = Depends(_bearer)) -> int:
-    try:
-        payload = jwt.decode(creds.credentials, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
-        if payload.get("type") != "access":
-            raise HTTPException(status_code=401, detail="Invalid token type")
-        return int(payload["sub"])
-    except (JWTError, KeyError, ValueError):
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
+# _bearer and get_current_user_id are imported from chatbot.auth above
 
 
 # ── Request / response models ─────────────────────────────────────────────────
@@ -298,7 +292,12 @@ async def chat(request: ChatRequest, creds: HTTPAuthorizationCredentials = Depen
 
             def _produce():
                 try:
-                    for chunk in agent.run(input=request.message, stream=True):
+                    run_input = (
+                        "[Format Request: Please provide a bit detailed response using rich Markdown, "
+                        "data tables, formulas (if applicable) and analysis.]\n"
+                        f"{request.message}"
+                    )
+                    for chunk in agent.run(input=run_input, stream=True):
                         content = getattr(chunk, "content", None)
                         if content:
                             loop.call_soon_threadsafe(
@@ -328,8 +327,13 @@ async def chat(request: ChatRequest, creds: HTTPAuthorizationCredentials = Depen
             )
 
         # Non-streaming path
+        run_input = (
+            "[Format Request: Please provide a bit detailed response using rich Markdown, "
+            "data tables, formulas (if applicable) and analysis.]\n"
+            f"{request.message}"
+        )
         result = await asyncio.get_event_loop().run_in_executor(
-            _thread_pool, lambda: agent.run(input=request.message, stream=False)
+            _thread_pool, lambda: agent.run(input=run_input, stream=False)
         )
         return ChatResponse(response=result.content, session_id=session_id)
 
@@ -403,7 +407,14 @@ async def session_history(session_id: str, _: int = Depends(get_current_user_id)
         role = m.get("role") if isinstance(m, dict) else getattr(m, "role", None)
         content = m.get("content") if isinstance(m, dict) else getattr(m, "content", None)
         if role in ("user", "assistant"):
-            messages.append({"role": role, "content": _extract_content(content)})
+            clean_content = _extract_content(content)
+            if clean_content.startswith("[Format Request:"):
+                clean_content = clean_content.split("]\n", 1)[-1]
+            elif clean_content.startswith("[TEXT CHAT MODE"):
+                clean_content = clean_content.split("]\n", 1)[-1]
+            elif clean_content.startswith("[VOICE MODE"):
+                clean_content = clean_content.split("] ", 1)[-1]
+            messages.append({"role": role, "content": clean_content})
 
     return {"session_id": session_id, "messages": messages}
 

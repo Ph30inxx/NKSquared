@@ -32,6 +32,15 @@ SAFE_QUERY_ROW_LIMIT = 500
 JWT_SECRET_KEY = os.getenv("SECRET_KEY", "change-me-in-production")
 JWT_ALGORITHM  = "HS256"
 
+# ── Voice / Vapi ─────────────────────────────────────────────────────────────
+REDIS_URL               = os.getenv("REDIS_URL", "redis://redis:6379/0")
+VAPI_SHARED_SECRET      = os.getenv("VAPI_SHARED_SECRET", "")
+VAPI_ASSISTANT_ID       = os.getenv("VAPI_ASSISTANT_ID", "")
+VOICE_COMPRESSOR_DEPLOYMENT  = os.getenv("VOICE_COMPRESSOR_DEPLOYMENT", "gpt-4o-mini")
+VOICE_COMPRESSOR_API_VERSION = os.getenv("VOICE_COMPRESSOR_API_VERSION", AZURE_OPENAI_API_VERSION)
+# Dev only — disable x-vapi-secret check for curl/Postman testing. Never True in prod.
+VAPI_SERVER_AUTH_DISABLED = os.getenv("VAPI_SERVER_AUTH_DISABLED", "false").lower() == "true"
+
 # ── Backend API (write operations) ───────────────────────────────────────────
 # Write tools call the existing FastAPI backend over HTTP, forwarding the
 # analyst's JWT token so all business logic, MOIC recomputation, and audit

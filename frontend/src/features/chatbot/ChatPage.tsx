@@ -18,8 +18,11 @@ import AddIcon from "@mui/icons-material/Add";
 import ChatBubbleOutlineIcon from "@mui/icons-material/ChatBubbleOutline";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import SendIcon from "@mui/icons-material/Send";
+import MicIcon from "@mui/icons-material/Mic";
+import MicOffIcon from "@mui/icons-material/MicOff";
 
 import { useChatSession } from "./useChatSession";
+import { useVoiceCall } from "./useVoiceCall";
 import MessageBubble from "./MessageBubble";
 import type { Conversation } from "./chatApi";
 
@@ -68,7 +71,26 @@ export default function ChatPage() {
     newChat,
     selectConversation,
     removeConversation,
+    sessionId,
+    appendMessage,
   } = useChatSession();
+
+  const {
+    state: voiceState,
+    volume,
+    transcript,
+    activeActionSummary,
+    start: startVoice,
+    stop: stopVoice,
+  } = useVoiceCall(sessionId);
+
+  // Surface voice transcripts into the chat message list
+  useEffect(() => {
+    if (transcript) {
+      appendMessage({ role: "assistant", content: transcript });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [transcript]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -87,6 +109,10 @@ export default function ChatPage() {
       handleSend();
     }
   };
+
+  const voiceActive   = voiceState === "active" || voiceState === "thinking" || voiceState === "executing";
+  const voiceBusy     = voiceState === "connecting" || voiceState === "thinking" || voiceState === "executing";
+  const voiceLive     = voiceState === "active" || voiceState === "ending";
 
   const groups = groupByDate(conversations);
 
@@ -232,6 +258,47 @@ export default function ChatPage() {
           bgcolor: "background.default",
         }}
       >
+        {/* Voice status banner */}
+        {voiceActive && (
+          <Box
+            sx={{
+              px: 3, py: 1.5,
+              display: "flex", alignItems: "center", gap: 1.5,
+              bgcolor: "primary.50",
+              borderBottom: "1px solid",
+              borderColor: "primary.100",
+              fontSize: 13,
+              color: "primary.main",
+            }}
+          >
+            {/* Pulsing dot */}
+            <Box
+              sx={{
+                width: 10, height: 10, borderRadius: "50%", bgcolor: "error.main", flexShrink: 0,
+                "@keyframes pulse": { "0%, 100%": { opacity: 1 }, "50%": { opacity: 0.3 } },
+                animation: voiceState === "active" ? "pulse 1.4s ease-in-out infinite" : "none",
+              }}
+            />
+            
+            {voiceState === "thinking" && "Looking up data…"}
+            
+            {voiceState === "executing" && (
+              <Box sx={{ display: "flex", alignItems: "center", gap: 1, flex: 1, minWidth: 0 }}>
+                <CircularProgress size={14} thickness={5} color="inherit" />
+                <Typography variant="body2" sx={{ color: "inherit", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {activeActionSummary ? `Executing: ${activeActionSummary}` : "Executing action…"}
+                </Typography>
+              </Box>
+            )}
+            
+            {voiceState === "active" && "Listening…"}
+
+            <Box sx={{ ml: "auto", opacity: 0.55, fontSize: 12, flexShrink: 0 }}>
+              Volume: {Math.round(volume * 100)}%
+            </Box>
+          </Box>
+        )}
+
         {/* Messages */}
         <Box sx={{ flex: 1, overflowY: "auto", p: 3 }}>
           {messages.length === 0 && !loadingConvs && (
@@ -306,7 +373,7 @@ export default function ChatPage() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              disabled={isStreaming}
+              disabled={isStreaming || voiceActive}
               variant="outlined"
               sx={{
                 "& .MuiOutlinedInput-root": {
@@ -315,11 +382,30 @@ export default function ChatPage() {
                 },
               }}
             />
-            <Box sx={{ pb: 0.5 }}>
+            <Box sx={{ pb: 0.5, display: "flex", alignItems: "center", gap: 0.5 }}>
+              {/* Mic button */}
+              {voiceBusy ? (
+                <Box sx={{ display: "flex", alignItems: "center", px: 0.5 }}>
+                  <CircularProgress size={22} />
+                </Box>
+              ) : voiceLive ? (
+                <Tooltip title="End voice call">
+                  <IconButton color="error" onClick={stopVoice}>
+                    <MicOffIcon />
+                  </IconButton>
+                </Tooltip>
+              ) : (
+                <Tooltip title="Start voice call">
+                  <IconButton onClick={startVoice} disabled={isStreaming} sx={{ color: "text.secondary" }}>
+                    <MicIcon />
+                  </IconButton>
+                </Tooltip>
+              )}
+
               <IconButton
                 color="primary"
                 onClick={handleSend}
-                disabled={isStreaming || !input.trim()}
+                disabled={isStreaming || !input.trim() || voiceActive}
                 sx={{
                   bgcolor: "primary.main",
                   color: "white",
