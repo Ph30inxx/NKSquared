@@ -18,6 +18,7 @@ import os
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+from datetime import date as _date
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from jose import jwt as jose_jwt
@@ -299,8 +300,9 @@ async def _tool_query(args: dict, session: CallSession) -> str:
             session.session_id,
             include_write=needs_write_tools(query),
         )
+        today = _date.today().isoformat()
         voice_query = (
-            "[VOICE MODE — respond in plain text only, no markdown, "
+            f"[Today's date is {today}. VOICE MODE — respond in plain text only, no markdown, "
             f"{'3-4' if is_summary else '2'} sentences max] {query}"
         )
 
@@ -364,8 +366,14 @@ async def _tool_execute(args: dict, session: CallSession) -> str:
             session.session_id,
             include_write=True,
         )
-        # Verbal confirmation already obtained — skip the dry_run preview step
-        confirmed_query = f"The analyst has agreed. Carry out this action: {query}"
+        # Verbal confirmation already obtained — skip the dry_run preview step.
+        # Always inject today's date so "today" in the query resolves correctly
+        # regardless of stale session history or model training data defaults.
+        today = _date.today().isoformat()
+        confirmed_query = (
+            f"[Today's date is {today}] "
+            f"The analyst has agreed. Carry out this action: {query}"
+        )
 
         # Snapshot ContextVars (including _auth_token) so they are visible
         # inside the thread-pool thread — identical pattern to server.py.

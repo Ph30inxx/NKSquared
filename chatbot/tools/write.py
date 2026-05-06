@@ -253,6 +253,14 @@ def add_valuation(
 
 def update_company(
     company_name: str,
+    display_name: str = None,
+    sector: str = None,
+    sub_sector: str = None,
+    portfolio_type: str = None,
+    asset_class: str = None,
+    country: str = None,
+    date_of_first_investment: str = None,
+    currency: str = None,
     current_value_cr: float = None,
     investment_status: str = None,
     portfolio_status: str = None,
@@ -265,14 +273,24 @@ def update_company(
     """
     Update fields on an existing portfolio company record.
 
-    Use for: updating current value (mark-to-market), changing investment status
-    (Active → Written_off / Matured / Exit_via_IPO / Exit_via_Share_swap),
-    updating notes, or updating contact emails.
+    Use for: updating current value (mark-to-market), changing investment status,
+    renaming display name, updating sector/sub-sector, portfolio type, asset class,
+    country, date of first investment, currency, notes, or contact emails.
 
     ALWAYS call dry_run=True first. Shows current vs proposed values.
 
     Args:
         company_name: Company name (partial match).
+        display_name: Short display name shown in dashboards.
+        sector: Industry sector (e.g. 'FinTech', 'Consumer', 'Real Estate').
+        sub_sector: Sub-sector classification.
+        portfolio_type: One of 'Entity_D_Core', 'Entity_D_Non_Core', 'Entity_D_LLC',
+                        'Entity_E', 'Entity_A', 'Strategic_Equity', 'Entity_C',
+                        'Real_Estate_Debt'.
+        asset_class: 'Direct_Equity', 'Fund_Investment', or 'Debt_Instrument'.
+        country: Country of operation (e.g. 'India', 'UAE').
+        date_of_first_investment: ISO date YYYY-MM-DD of first capital deployment.
+        currency: Reporting currency (e.g. 'INR', 'AED', 'USD').
         current_value_cr: Updated market value in INR Crores.
         investment_status: 'Active','Written_off','Exit_via_IPO',
                            'Exit_via_Share_swap','Matured'.
@@ -285,6 +303,11 @@ def update_company(
     """
     VALID_INV = {"Active", "Written_off", "Exit_via_IPO", "Exit_via_Share_swap", "Matured"}
     VALID_PORT = {"Unrealized", "Realized"}
+    VALID_TYPES = {
+        "Entity_D_Core", "Entity_D_Non_Core", "Entity_D_LLC", "Entity_E",
+        "Entity_A", "Strategic_Equity", "Entity_C", "Real_Estate_Debt",
+    }
+    VALID_ASSET = {"Direct_Equity", "Fund_Investment", "Debt_Instrument"}
 
     company = _resolve_company(company_name)
     if not company:
@@ -293,6 +316,34 @@ def update_company(
     updates: dict = {}
     changes: list[str] = []
 
+    if display_name is not None:
+        updates["display_name"] = display_name
+        changes.append(f"display name → {display_name}")
+    if sector is not None:
+        updates["sector"] = sector
+        changes.append(f"sector → {sector}")
+    if sub_sector is not None:
+        updates["sub_sector"] = sub_sector
+        changes.append(f"sub-sector → {sub_sector}")
+    if portfolio_type is not None:
+        if portfolio_type and portfolio_type not in VALID_TYPES:
+            return _err(f"Invalid portfolio_type. Valid: {sorted(VALID_TYPES)}")
+        updates["portfolio_type"] = portfolio_type
+        changes.append(f"portfolio type → {portfolio_type}")
+    if asset_class is not None:
+        if asset_class and asset_class not in VALID_ASSET:
+            return _err(f"Invalid asset_class. Valid: {sorted(VALID_ASSET)}")
+        updates["asset_class"] = asset_class
+        changes.append(f"asset class → {asset_class}")
+    if country is not None:
+        updates["country"] = country
+        changes.append(f"country → {country}")
+    if date_of_first_investment is not None:
+        updates["date_of_first_investment"] = date_of_first_investment
+        changes.append(f"date of first investment → {date_of_first_investment}")
+    if currency is not None:
+        updates["currency"] = currency
+        changes.append(f"currency → {currency}")
     if current_value_cr is not None:
         updates["current_value_cr"] = current_value_cr
         changes.append(f"current value → ₹{current_value_cr:.2f} Cr")
@@ -330,6 +381,14 @@ def update_company(
             "summary": summary,
             "company": company["display_name"],
             "current_values": {
+                "display_name": company.get("display_name"),
+                "sector": company.get("sector"),
+                "sub_sector": company.get("sub_sector"),
+                "portfolio_type": company.get("portfolio_type"),
+                "asset_class": company.get("asset_class"),
+                "country": company.get("country"),
+                "date_of_first_investment": company.get("date_of_first_investment"),
+                "currency": company.get("currency"),
                 "current_value_cr": company.get("current_value_cr"),
                 "investment_status": company.get("investment_status"),
                 "portfolio_status": company.get("portfolio_status"),
@@ -425,33 +484,81 @@ def send_mis_reminder(
     outside the normal scheduled cadence.
 
     The company must have a ReminderSchedule configured and a
-    primary_contact_email set.
+    primary_contact_email set. Standard reminder goes to primary_contact_email.
+    Escalation goes to escalation_contact_email and CC's primary_contact_email.
 
-    ALWAYS call dry_run=True first.
+    ALWAYS call dry_run=True first. The dry-run shows exactly who will be emailed.
 
     Args:
         company_name: Company name (partial match).
-        is_escalation: True to send as an escalation (senior contact).
+        is_escalation: True to send as an escalation to the senior contact.
         dry_run: True = preview. False = execute.
     """
     company = _resolve_company(company_name)
     if not company:
         return _err(f"Company not found: '{company_name}'")
 
-    if not company.get("primary_contact_email"):
+    primary_email = company.get("primary_contact_email")
+    if not primary_email:
         return _err(
             f"{company['display_name']} has no primary_contact_email set. "
             "Update the company record first using update_company."
         )
 
-    kind = "escalation reminder" if is_escalation else "reminder"
-    summary = (
-        f"Send MIS {kind} to {company['display_name']} "
-        f"({company['primary_contact_email']})"
-    )
+    # Verify a ReminderSchedule exists — backend requires one for send-now
+    schedule_info: dict | None = None
+    try:
+        sr = httpx.get(
+            f"{BACKEND_API_URL}/reminders/schedules",
+            params={"company_id": company["id"]},
+            headers=_headers(),
+            timeout=10,
+        )
+        if sr.status_code == 200:
+            schedules = sr.json()
+            schedule_info = schedules[0] if schedules else None
+    except Exception as exc:
+        logger.warning("Could not fetch schedules for pre-check: %s", exc)
+
+    if schedule_info is None:
+        return _err(
+            f"{company['display_name']} has no reminder schedule configured. "
+            "Create one first using manage_reminder_schedule."
+        )
+
+    escalation_email = company.get("escalation_contact_email")
+    kind = "escalation reminder" if is_escalation else "MIS reminder"
+
+    if is_escalation:
+        if escalation_email:
+            summary = (
+                f"Send {kind} for {company['display_name']}: "
+                f"email → {escalation_email} (CC: {primary_email})"
+            )
+        else:
+            summary = (
+                f"Send {kind} for {company['display_name']}: "
+                f"no escalation_contact_email set — will fall back to primary ({primary_email})"
+            )
+    else:
+        summary = (
+            f"Send {kind} for {company['display_name']}: "
+            f"email → {primary_email}"
+        )
 
     if dry_run:
-        return json.dumps({"status": "pending_confirmation", "summary": summary})
+        return json.dumps({
+            "status": "pending_confirmation",
+            "summary": summary,
+            "company": company["display_name"],
+            "to": escalation_email if (is_escalation and escalation_email) else primary_email,
+            "cc": primary_email if (is_escalation and escalation_email) else None,
+            "schedule": {
+                "reminder_type": schedule_info.get("reminder_type"),
+                "cadence_days": schedule_info.get("cadence_days"),
+                "enabled": schedule_info.get("enabled"),
+            },
+        })
 
     try:
         resp = httpx.post(
@@ -463,9 +570,15 @@ def send_mis_reminder(
         return _err(f"Could not reach backend: {exc}")
 
     if resp.status_code == 200:
+        log = resp.json()
         return json.dumps({
             "status": "success",
-            "message": f"MIS {kind} sent to {company['display_name']}.",
+            "message": (
+                f"{kind.capitalize()} sent to {company['display_name']}. "
+                f"Recipient: {log.get('recipient_email')}. "
+                f"Period: {log.get('related_period', 'N/A')}."
+            ),
+            "log_id": log.get("id"),
         })
     return _err(f"Backend returned {resp.status_code}: {resp.text[:300]}")
 
@@ -970,6 +1083,75 @@ def correct_mis_metric(
         "status": "success",
         "message": f"{metric} for {label} in {month} updated: {current_value} → {new_value}.",
         "audit_note": audit,
+    })
+
+
+# ── Tool: get_reminder_logs ──────────────────────────────────────────────────
+
+def get_reminder_logs(
+    company_name: str,
+    limit: int = 10,
+) -> str:
+    """
+    Retrieve the most recent MIS reminder log entries for a portfolio company.
+
+    Use this to answer questions like:
+      "When was the last reminder sent to Company_01?"
+      "Has a reminder gone out this month for Company_02?"
+      "How many reminders have we sent and were any escalations?"
+
+    Shows: sent timestamp, recipient email, escalation flag, status, and the
+    reporting period the reminder related to.
+
+    Args:
+        company_name: Company name (partial match).
+        limit: Number of recent log entries to return (default 10, max 50).
+    """
+    company = _resolve_company(company_name)
+    if not company:
+        return _err(f"Company not found: '{company_name}'")
+
+    limit = max(1, min(limit, 50))
+
+    try:
+        resp = httpx.get(
+            f"{BACKEND_API_URL}/reminders/logs",
+            params={"company_id": company["id"], "limit": limit, "offset": 0},
+            headers=_headers(),
+            timeout=10,
+        )
+    except Exception as exc:
+        return _err(f"Could not reach backend: {exc}")
+
+    if resp.status_code != 200:
+        return _err(f"Backend returned {resp.status_code}: {resp.text[:300]}")
+
+    data = resp.json()
+    items = data.get("items", [])
+
+    if not items:
+        return json.dumps({
+            "company": company["display_name"],
+            "message": f"No reminder logs found for {company['display_name']}. "
+                       "No reminders have been sent yet.",
+            "total": 0,
+        })
+
+    return json.dumps({
+        "company": company["display_name"],
+        "total_on_record": data.get("total", len(items)),
+        "showing": len(items),
+        "logs": [
+            {
+                "sent_at": log["sent_at"],
+                "recipient_email": log["recipient_email"],
+                "subject": log["subject"],
+                "is_escalation": log["is_escalation"],
+                "status": log["status"],
+                "related_period": log["related_period"],
+            }
+            for log in items
+        ],
     })
 
 
