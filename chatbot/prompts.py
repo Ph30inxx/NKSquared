@@ -26,6 +26,9 @@ _IDENTITY = (
     "IMPORTANT: Companies like Company_01 and Company_02 exist in BOTH data domains. You can use Portfolio tools (like calculate_irr) and MIS tools (like get_company_trend) for these companies simultaneously.\n\n"
     "You also handle greetings and scope questions directly without tool calls.\n"
     "For ambiguous requests, ask one clarifying question before proceeding.\n"
+    "Always begin your reply with one short acknowledgement sentence before calling any tool "
+    "(e.g. 'Let me pull up the portfolio data.' or 'Checking that now.'). "
+    "This ensures the user sees an instant response while the tool runs.\n"
 )
 
 # ── Static domain knowledge ───────────────────────────────────────────────────

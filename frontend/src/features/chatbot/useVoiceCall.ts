@@ -10,24 +10,42 @@ export type VoiceState =
   | "executing"   // execute_investment_action tool fired — write in progress
   | "ending";
 
+export interface VoiceTurn {
+  role: "user" | "assistant";
+  content: string;
+}
+
 export interface UseVoiceCallReturn {
   state: VoiceState;
   volume: number;
-  transcript: string | null;
+  turns: VoiceTurn[];
   activeActionSummary: string | null;
   start: () => Promise<void>;
   stop: () => void;
 }
 
-export function useVoiceCall(sessionId: string): UseVoiceCallReturn {
+export function useVoiceCall(
+  sessionId: string,
+  onCallEnded?: (turns: VoiceTurn[]) => void,
+): UseVoiceCallReturn {
   const vapiRef = useRef<Vapi | null>(null);
   const [state, setState] = useState<VoiceState>("idle");
   const [volume, setVolume] = useState(0);
-  const [transcript, setTranscript] = useState<string | null>(null);
+  const [turns, setTurns] = useState<VoiceTurn[]>([]);
   const [activeActionSummary, setActiveActionSummary] = useState<string | null>(null);
+
+  // Stable refs so event handlers always see latest values without stale closures
+  const turnsRef = useRef<VoiceTurn[]>([]);
+  turnsRef.current = turns;
+  const onCallEndedRef = useRef(onCallEnded);
+  onCallEndedRef.current = onCallEnded;
+  // Vapi can fire both call-end and error on the same termination — guard against double-fire
+  const callEndedRef = useRef(false);
 
   const start = useCallback(async () => {
     setState("connecting");
+    setTurns([]);
+    callEndedRef.current = false;
     try {
       const { vapi_public_key, assistant_id, user_id } =
         await startVoiceSession(sessionId);
@@ -36,35 +54,33 @@ export function useVoiceCall(sessionId: string): UseVoiceCallReturn {
       vapiRef.current = vapi;
 
       vapi.on("call-start", () => setState("active"));
-      vapi.on("call-end", () => {
+
+      const fireCallEnded = () => {
+        if (callEndedRef.current) return;
+        callEndedRef.current = true;
         setState("idle");
         setVolume(0);
-        setTranscript(null);
         setActiveActionSummary(null);
-      });
+        onCallEndedRef.current?.(turnsRef.current);
+      };
+
+      vapi.on("call-end", fireCallEnded);
+
       vapi.on("error", (e: any) => {
         console.error("Vapi error:", e);
-        setState("idle");
-        setVolume(0);
-        setTranscript(null);
-        setActiveActionSummary(null);
+        fireCallEnded();
       });
+
       vapi.on("volume-level", (v: number) => setVolume(v));
 
       vapi.on("message", (msg: any) => {
         if (msg.type === "tool-calls") {
           const tc = msg.toolCallList?.[0];
-          // Vapi sends name/arguments at the top level; some versions
-          // wrap them under a "function" key (OpenAI-style).
-          const toolName =
-            tc?.function?.name ?? tc?.name ?? "";
+          const toolName = tc?.function?.name ?? tc?.name ?? "";
           if (toolName === "execute_investment_action") {
-            // Verbal confirmation already happened before this fires.
-            // Show what is being executed rather than asking for confirmation.
             try {
               const rawArgs = tc?.function?.arguments ?? tc?.arguments ?? "{}";
-              const args =
-                typeof rawArgs === "string" ? JSON.parse(rawArgs) : rawArgs;
+              const args = typeof rawArgs === "string" ? JSON.parse(rawArgs) : rawArgs;
               setActiveActionSummary(args.action_summary ?? null);
             } catch {
               setActiveActionSummary(null);
@@ -79,18 +95,21 @@ export function useVoiceCall(sessionId: string): UseVoiceCallReturn {
         if (msg.type === "conversation-update") {
           setState("active");
           setActiveActionSummary(null);
-          // Surface latest assistant utterance as a chat transcript entry
-          const turns: any[] = msg.conversation ?? [];
-          const lastAssistant = [...turns]
-            .reverse()
-            .find((t) => t.role === "assistant");
-          if (lastAssistant?.content) {
-            setTranscript(
-              typeof lastAssistant.content === "string"
-                ? lastAssistant.content
-                : JSON.stringify(lastAssistant.content)
-            );
-          }
+          // conversation-update gives the full array of turns so far.
+          // Assistant tool-call turns have content: null — exclude them
+          // so only spoken utterances appear in the transcript.
+          const allTurns: VoiceTurn[] = (msg.conversation ?? [])
+            .filter((t: any) => t.role === "user" || t.role === "assistant")
+            .map((t: any) => ({
+              role: t.role as "user" | "assistant",
+              content: typeof t.content === "string"
+                ? t.content
+                : t.content != null
+                  ? JSON.stringify(t.content)
+                  : "",
+            }))
+            .filter((t: VoiceTurn) => t.content.trim() !== "");
+          setTurns(allTurns);
         }
       });
 
@@ -120,5 +139,5 @@ export function useVoiceCall(sessionId: string): UseVoiceCallReturn {
     };
   }, []);
 
-  return { state, volume, transcript, activeActionSummary, start, stop };
+  return { state, volume, turns, activeActionSummary, start, stop };
 }

@@ -103,18 +103,21 @@ export default function ChatPage() {
   const {
     state: voiceState,
     volume,
-    transcript,
+    turns,
     activeActionSummary,
     start: startVoice,
     stop: stopVoice,
   } = useVoiceCall(sessionId);
 
+  // Sync voice turns into the chat message list as they arrive.
+  // Both user speech and assistant replies are appended so the inline
+  // chat thread shows the full voice exchange alongside text messages.
+  const prevTurnsLen = useRef(0);
   useEffect(() => {
-    if (transcript) {
-      appendMessage({ role: "assistant", content: transcript });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [transcript]);
+    const newTurns = turns.slice(prevTurnsLen.current);
+    newTurns.forEach((t) => appendMessage({ role: t.role, content: t.content }));
+    prevTurnsLen.current = turns.length;
+  }, [turns, appendMessage]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });

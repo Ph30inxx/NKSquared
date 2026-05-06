@@ -145,6 +145,24 @@ export async function startVoiceSession(sessionId: string): Promise<{
 }
 
 /**
+ * Save a completed voice call as a conversation entry in the chat history.
+ * Creates a new chat_conversations row with the full turn-by-turn transcript.
+ */
+export async function saveVoiceConversation(
+  sessionId: string,
+  title: string,
+  turns: Array<{ role: string; content: string }>,
+): Promise<Conversation> {
+  const res = await fetchChatApi(`${CHAT_BASE}/conversations/voice`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ session_id: sessionId, title, turns }),
+  });
+  if (!res.ok) throw new Error(`Failed to save voice conversation: ${res.status}`);
+  return res.json();
+}
+
+/**
  * Signal that the last answer was correct (thumbs-up).
  * Sends a hidden system directive — the agent saves the validated query.
  */

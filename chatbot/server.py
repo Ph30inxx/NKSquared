@@ -24,6 +24,7 @@ import json
 import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timezone
 from typing import Optional
 
 from agno.agent import Agent
@@ -118,6 +119,70 @@ async def create_conversation(user_id: int = Depends(get_current_user_id)):
             )
         conn.commit()
     return {"id": conv_id, "session_id": session_id, "title": "New Conversation"}
+
+
+class VoiceTurn(BaseModel):
+    role: str
+    content: str = ""   # null/undefined content from Vapi tool-call turns becomes ""
+
+
+class VoiceConversationRequest(BaseModel):
+    session_id: str
+    title: str
+    turns: list[VoiceTurn]
+
+
+@app.post("/conversations/voice", status_code=201)
+async def save_voice_conversation(
+    req: VoiceConversationRequest,
+    user_id: int = Depends(get_current_user_id),
+):
+    """
+    Save a completed voice call as a conversation entry.
+
+    Creates a chat_conversations row and stores each turn in
+    voice_chat_messages (created lazily on first use — no migration needed).
+    The GET /session/{id}/history endpoint checks this table first, so
+    clicking the voice entry in the sidebar loads the full transcript.
+    """
+    conv_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc).isoformat()
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS voice_chat_messages (
+                    id SERIAL PRIMARY KEY,
+                    session_id TEXT NOT NULL,
+                    role TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    ord INTEGER NOT NULL DEFAULT 0,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+            """)
+            cur.execute("""
+                CREATE INDEX IF NOT EXISTS idx_vcm_session_id
+                    ON voice_chat_messages(session_id)
+            """)
+            cur.execute(
+                "INSERT INTO chat_conversations (id, session_id, user_id, title) "
+                "VALUES (%s, %s, %s, %s) ON CONFLICT (session_id) DO NOTHING",
+                (conv_id, req.session_id, user_id, req.title[:80]),
+            )
+            # Only insert turns if the conversation row was actually new
+            if cur.rowcount > 0:
+                for i, turn in enumerate(req.turns):
+                    cur.execute(
+                        "INSERT INTO voice_chat_messages (session_id, role, content, ord) VALUES (%s, %s, %s, %s)",
+                        (req.session_id, turn.role, turn.content, i),
+                    )
+        conn.commit()
+    return {
+        "id": conv_id,
+        "session_id": req.session_id,
+        "title": req.title[:80],
+        "created_at": now,
+        "updated_at": now,
+    }
 
 
 @app.delete("/conversations/{conv_id}", status_code=204)
@@ -393,9 +458,28 @@ def _extract_content(content) -> str:
 async def session_history(session_id: str, _: int = Depends(get_current_user_id)):
     """Return the stored conversation history for a session.
 
-    Uses a cached agent when available to avoid rebuilding the full agent
-    tree just to read stored messages.
+    Checks voice_chat_messages first (voice calls saved from VoicePage).
+    Falls back to Agno session storage for text chat sessions.
     """
+    # Voice conversations are stored in voice_chat_messages — check first
+    try:
+        with get_conn() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    "SELECT role, content FROM voice_chat_messages "
+                    "WHERE session_id = %s ORDER BY ord ASC",
+                    (session_id,),
+                )
+                voice_rows = cur.fetchall()
+        if voice_rows:
+            return {
+                "session_id": session_id,
+                "messages": [{"role": r["role"], "content": r["content"]} for r in voice_rows],
+            }
+    except Exception:
+        pass  # table may not exist on older deployments — fall through
+
+    # Text chat: load from Agno session storage
     agent = _get_or_create_agent(session_id, include_write=False)
     try:
         raw = agent.get_session_messages(session_id=session_id) or []

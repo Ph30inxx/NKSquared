@@ -317,11 +317,11 @@ async def _tool_query(args: dict, session: CallSession) -> str:
 
         return await asyncio.wait_for(
             loop.run_in_executor(_voice_pool, _run),
-            timeout=35.0,
+            timeout=55.0,
         )
 
     except asyncio.TimeoutError:
-        logger.warning("Voice query timed out after 35s: %s", query[:80])
+        logger.warning("Voice query timed out after 55s: %s", query[:80])
         return "That query took too long. Could you try a simpler question?"
 
     except Exception as exc:
@@ -372,7 +372,7 @@ async def _tool_execute(args: dict, session: CallSession) -> str:
         today = _date.today().isoformat()
         confirmed_query = (
             f"[Today's date is {today}] "
-            f"The analyst has agreed. Carry out this action: {query}"
+            f"The analyst said yes, go ahead. Complete this action: {query}"
         )
 
         # Snapshot ContextVars (including _auth_token) so they are visible
@@ -389,11 +389,11 @@ async def _tool_execute(args: dict, session: CallSession) -> str:
 
         return await asyncio.wait_for(
             loop.run_in_executor(_voice_pool, lambda: ctx.run(_run)),
-            timeout=35.0,
+            timeout=55.0,
         )
 
     except asyncio.TimeoutError:
-        logger.warning("Voice write timed out after 35s: %s", query[:80])
+        logger.warning("Voice write timed out after 55s: %s", query[:80])
         return "That action took too long. Please try again or check the app."
 
     except Exception as exc:
