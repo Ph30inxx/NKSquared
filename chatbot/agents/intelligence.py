@@ -50,6 +50,7 @@ from chatbot.tools.write import (
     correct_transaction,
     correct_mis_metric,
     deactivate_company,
+    get_reminder_logs,
 )
 
 # ── Tool sets ─────────────────────────────────────────────────────────────────
@@ -69,6 +70,8 @@ _READ_TOOLS = [
     get_mis_recent_summary,
     get_bu_breakdown,
     get_outlet_breakdown,
+    # Reminder history
+    get_reminder_logs,
     # Shared utilities
     forex_converter,
     # Ad-hoc SQL (row-capped, allowlisted)

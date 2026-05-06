@@ -26,6 +26,9 @@ _IDENTITY = (
     "IMPORTANT: Companies like Company_01 and Company_02 exist in BOTH data domains. You can use Portfolio tools (like calculate_irr) and MIS tools (like get_company_trend) for these companies simultaneously.\n\n"
     "You also handle greetings and scope questions directly without tool calls.\n"
     "For ambiguous requests, ask one clarifying question before proceeding.\n"
+    "Always begin your reply with one short acknowledgement sentence before calling any tool "
+    "(e.g. 'Let me pull up the portfolio data.' or 'Checking that now.'). "
+    "This ensures the user sees an instant response while the tool runs.\n"
 )
 
 # ── Static domain knowledge ───────────────────────────────────────────────────
@@ -165,6 +168,10 @@ MIS questions:
   - BU-level breakdown                  → call get_bu_breakdown
   - Outlet-level data (Company_01 only) → call get_outlet_breakdown
 
+Reminder history:
+  - "When was the last reminder sent?", "Has a reminder gone out this month?",
+    "How many reminders have we sent for X?" → call get_reminder_logs
+
 Currency:
   - Any AED or USD figure to be shown in INR → call forex_converter before displaying
 
@@ -270,10 +277,16 @@ WRITE TOOL ROUTING:
   - New investment / follow-on / exit / distribution / write-off
                                         → log_transaction
   - New valuation entry                 → add_valuation
-  - Update current value / status / notes / contact
+  - Update current value, investment/portfolio status, display name, sector,
+    sub-sector, portfolio type, asset class, country, date of first investment,
+    currency, notes, or contact details
                                         → update_company
   - New or corrected FX rate            → upsert_forex_rate
-  - Send MIS reminder immediately       → send_mis_reminder
+  - Send MIS reminder immediately (standard or escalation)
+                                        → send_mis_reminder
+    Dry-run shows: exact recipient, CC (if escalation), and schedule status.
+    Escalation emails escalation_contact_email and CC's primary_contact_email.
+    Tool will error early if no schedule or no primary_contact_email is set.
   - Create a brand-new company record   → create_company
   - Create / update / enable / disable reminder schedule
                                         → manage_reminder_schedule

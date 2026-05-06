@@ -14,6 +14,7 @@ import MisInboxPage from "./pages/mis/MisInboxPage";
 import MisTemplateBuilderPage from "./pages/mis/templates/MisTemplateBuilderPage";
 import MisTemplateListPage from "./pages/mis/templates/MisTemplateListPage";
 import ChatPage from "./features/chatbot/ChatPage";
+import VoicePage from "./features/chatbot/VoicePage";
 import CompanyDetailPage from "./pages/portfolio/CompanyDetailPage";
 import PortfolioGridPage from "./pages/portfolio/PortfolioGridPage";
 import PortfolioListPage from "./pages/portfolio/PortfolioListPage";
@@ -27,12 +28,13 @@ export default function App() {
           <Route path="/login" element={<Login />} />
           <Route path="/upload/:token" element={<PublicUploadPage />} />
           <Route element={<ProtectedRoute />}>
+            <Route path="/chat" element={<ChatPage />} />
+            <Route path="/voice" element={<VoicePage />} />
             <Route element={<AppLayout />}>
               <Route path="/" element={<Dashboard />} />
               <Route path="/portfolio" element={<PortfolioListPage />} />
               <Route path="/portfolio/:id" element={<CompanyDetailPage />} />
               <Route path="/grid" element={<PortfolioGridPage />} />
-              <Route path="/chat" element={<ChatPage />} />
               <Route path="/mis" element={<MisInboxPage />} />
               <Route path="/mis/templates" element={<MisTemplateListPage />} />
               <Route path="/mis/templates/new" element={<MisTemplateBuilderPage />} />

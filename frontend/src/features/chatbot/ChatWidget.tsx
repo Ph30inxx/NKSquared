@@ -56,6 +56,7 @@ export default function ChatWidget() {
 
   // Hide widget on pages that don't need it
   if (location.pathname === "/chat") return null;
+  if (location.pathname === "/voice") return null;
   if (location.pathname.startsWith("/upload/")) return null;
   if (location.pathname === "/login") return null;
 

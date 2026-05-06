@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { NavLink, useNavigate } from "react-router-dom";
 import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
@@ -9,6 +10,7 @@ import IconButton from "@mui/material/IconButton";
 import List from "@mui/material/List";
 import ListItem from "@mui/material/ListItem";
 import ListItemButton from "@mui/material/ListItemButton";
+import ListItemIcon from "@mui/material/ListItemIcon";
 import ListItemText from "@mui/material/ListItemText";
 import Paper from "@mui/material/Paper";
 import TextField from "@mui/material/TextField";
@@ -20,10 +22,21 @@ import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import SendIcon from "@mui/icons-material/Send";
 import MicIcon from "@mui/icons-material/Mic";
 import MicOffIcon from "@mui/icons-material/MicOff";
+import DashboardIcon from "@mui/icons-material/Dashboard";
+import BusinessCenterIcon from "@mui/icons-material/BusinessCenter";
+import GridOnIcon from "@mui/icons-material/GridOn";
+import InboxIcon from "@mui/icons-material/Inbox";
+import RuleIcon from "@mui/icons-material/Rule";
+import NotificationsActiveIcon from "@mui/icons-material/NotificationsActive";
+import HistoryIcon from "@mui/icons-material/History";
+import GraphicEqIcon from "@mui/icons-material/GraphicEq";
+import LogoutIcon from "@mui/icons-material/Logout";
+import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 
 import { useChatSession } from "./useChatSession";
 import { useVoiceCall } from "./useVoiceCall";
 import MessageBubble from "./MessageBubble";
+import { useAuthStore } from "../../stores/auth";
 import type { Conversation } from "./chatApi";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -52,12 +65,24 @@ function groupByDate(conversations: Conversation[]) {
   return groups.filter((g) => g.items.length > 0);
 }
 
+const APP_NAV = [
+  { to: "/", label: "Dashboard", icon: <DashboardIcon fontSize="small" />, end: true },
+  { to: "/portfolio", label: "Portfolio", icon: <BusinessCenterIcon fontSize="small" /> },
+  { to: "/grid", label: "Grid", icon: <GridOnIcon fontSize="small" /> },
+  { to: "/mis", label: "MIS", icon: <InboxIcon fontSize="small" /> },
+  { to: "/mis/templates", label: "MIS Templates", icon: <RuleIcon fontSize="small" /> },
+  { to: "/admin/reminders", label: "Reminders", icon: <NotificationsActiveIcon fontSize="small" /> },
+  { to: "/admin/audit-log", label: "Audit Log", icon: <HistoryIcon fontSize="small" /> },
+];
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function ChatPage() {
   const [input, setInput] = useState("");
   const [hoveredConvId, setHoveredConvId] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const navigate = useNavigate();
+  const logout = useAuthStore((s) => s.logout);
 
   const {
     conversations,
@@ -78,19 +103,21 @@ export default function ChatPage() {
   const {
     state: voiceState,
     volume,
-    transcript,
+    turns,
     activeActionSummary,
     start: startVoice,
     stop: stopVoice,
   } = useVoiceCall(sessionId);
 
-  // Surface voice transcripts into the chat message list
+  // Sync voice turns into the chat message list as they arrive.
+  // Both user speech and assistant replies are appended so the inline
+  // chat thread shows the full voice exchange alongside text messages.
+  const prevTurnsLen = useRef(0);
   useEffect(() => {
-    if (transcript) {
-      appendMessage({ role: "assistant", content: transcript });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [transcript]);
+    const newTurns = turns.slice(prevTurnsLen.current);
+    newTurns.forEach((t) => appendMessage({ role: t.role, content: t.content }));
+    prevTurnsLen.current = turns.length;
+  }, [turns, appendMessage]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -110,16 +137,21 @@ export default function ChatPage() {
     }
   };
 
-  const voiceActive   = voiceState === "active" || voiceState === "thinking" || voiceState === "executing";
-  const voiceBusy     = voiceState === "connecting" || voiceState === "thinking" || voiceState === "executing";
-  const voiceLive     = voiceState === "active" || voiceState === "ending";
+  const handleLogout = () => {
+    logout();
+    navigate("/login", { replace: true });
+  };
+
+  const voiceActive = voiceState === "active" || voiceState === "thinking" || voiceState === "executing";
+  const voiceBusy   = voiceState === "connecting" || voiceState === "thinking" || voiceState === "executing";
+  const voiceLive   = voiceState === "active" || voiceState === "ending";
 
   const groups = groupByDate(conversations);
 
   return (
-    <Box sx={{ display: "flex", height: "calc(100vh - 120px)", overflow: "hidden" }}>
+    <Box sx={{ display: "flex", height: "100vh", overflow: "hidden", bgcolor: "background.default" }}>
 
-      {/* ── Left Sidebar ──────────────────────────────────────────────── */}
+      {/* ── Left Sidebar ──────────────────────────────────────────────────────── */}
       <Box
         sx={{
           width: 260,
@@ -129,11 +161,19 @@ export default function ChatPage() {
           borderRight: "1px solid",
           borderColor: "divider",
           bgcolor: "background.paper",
-          mr: 2,
         }}
       >
+        {/* App name */}
+        <Box sx={{ px: 2.5, py: 2, display: "flex", alignItems: "center", gap: 1 }}>
+          <Typography variant="h6" fontWeight={700} sx={{ letterSpacing: -0.3 }}>
+            NKSquared
+          </Typography>
+        </Box>
+
+        <Divider />
+
         {/* New Chat button */}
-        <Box sx={{ p: 1.5 }}>
+        <Box sx={{ px: 1.5, pt: 1.5, pb: 1 }}>
           <Button
             fullWidth
             variant="outlined"
@@ -146,14 +186,35 @@ export default function ChatPage() {
               fontWeight: 500,
             }}
           >
-            New Chat
+            New Conversation
+          </Button>
+        </Box>
+
+        {/* Voice Tools link */}
+        <Box sx={{ px: 1.5, pb: 1 }}>
+          <Button
+            fullWidth
+            component={NavLink}
+            to="/voice"
+            startIcon={<GraphicEqIcon />}
+            sx={{
+              borderRadius: 2,
+              justifyContent: "flex-start",
+              textTransform: "none",
+              fontWeight: 500,
+              color: "text.secondary",
+              "&:hover": { bgcolor: "action.hover" },
+              "&.active": { color: "primary.main", bgcolor: "action.selected" },
+            }}
+          >
+            Voice Tools
           </Button>
         </Box>
 
         <Divider />
 
-        {/* Conversation list */}
-        <Box sx={{ flex: 1, overflowY: "auto" }}>
+        {/* Conversation list — scrollable */}
+        <Box sx={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
           {loadingConvs ? (
             <Box sx={{ display: "flex", justifyContent: "center", pt: 4 }}>
               <CircularProgress size={22} />
@@ -166,85 +227,159 @@ export default function ChatPage() {
               </Typography>
             </Box>
           ) : (
-            groups.map((group) => (
-              <Box key={group.label}>
-                <Typography
-                  variant="caption"
-                  sx={{
-                    px: 2,
-                    pt: 1.5,
-                    pb: 0.5,
-                    display: "block",
-                    color: "text.disabled",
-                    fontWeight: 700,
-                    textTransform: "uppercase",
-                    letterSpacing: 0.6,
-                    fontSize: "0.65rem",
-                  }}
-                >
-                  {group.label}
-                </Typography>
-                <List dense disablePadding>
-                  {group.items.map((conv) => (
-                    <ListItem
-                      key={conv.id}
-                      disablePadding
-                      secondaryAction={
-                        hoveredConvId === conv.id ? (
-                          <Tooltip title="Delete">
-                            <IconButton
-                              size="small"
-                              edge="end"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                removeConversation(conv.id);
-                              }}
-                              sx={{
-                                color: "text.secondary",
-                                mr: 0.5,
-                                "&:hover": { color: "error.main" },
-                              }}
-                            >
-                              <DeleteOutlineIcon fontSize="small" />
-                            </IconButton>
-                          </Tooltip>
-                        ) : null
-                      }
-                      onMouseEnter={() => setHoveredConvId(conv.id)}
-                      onMouseLeave={() => setHoveredConvId(null)}
-                    >
-                      <ListItemButton
-                        selected={conv.id === activeConvId}
-                        onClick={() => selectConversation(conv)}
-                        sx={{
-                          borderRadius: 1,
-                          mx: 0.5,
-                          pr: hoveredConvId === conv.id ? 5 : 1,
-                          "&.Mui-selected": {
-                            bgcolor: "action.selected",
-                            "&:hover": { bgcolor: "action.selected" },
-                          },
-                        }}
+            <>
+              <Typography
+                variant="caption"
+                sx={{
+                  px: 2, pt: 1.5, pb: 0.5,
+                  display: "block",
+                  color: "text.disabled",
+                  fontWeight: 700,
+                  textTransform: "uppercase",
+                  letterSpacing: 0.6,
+                  fontSize: "0.65rem",
+                }}
+              >
+                Recent
+              </Typography>
+              {groups.map((group) => (
+                <Box key={group.label}>
+                  <Typography
+                    variant="caption"
+                    sx={{
+                      px: 2, pt: 1, pb: 0.5,
+                      display: "block",
+                      color: "text.disabled",
+                      fontSize: "0.6rem",
+                      letterSpacing: 0.4,
+                    }}
+                  >
+                    {group.label}
+                  </Typography>
+                  <List dense disablePadding>
+                    {group.items.map((conv) => (
+                      <ListItem
+                        key={conv.id}
+                        disablePadding
+                        secondaryAction={
+                          hoveredConvId === conv.id ? (
+                            <Tooltip title="Delete">
+                              <IconButton
+                                size="small"
+                                edge="end"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  removeConversation(conv.id);
+                                }}
+                                sx={{
+                                  color: "text.secondary",
+                                  mr: 0.5,
+                                  "&:hover": { color: "error.main" },
+                                }}
+                              >
+                                <DeleteOutlineIcon fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
+                          ) : null
+                        }
+                        onMouseEnter={() => setHoveredConvId(conv.id)}
+                        onMouseLeave={() => setHoveredConvId(null)}
                       >
-                        <ListItemText
-                          primary={conv.title}
-                          primaryTypographyProps={{
-                            noWrap: true,
-                            variant: "body2",
-                            fontWeight: conv.id === activeConvId ? 600 : 400,
+                        <ListItemButton
+                          selected={conv.id === activeConvId}
+                          onClick={() => selectConversation(conv)}
+                          sx={{
+                            borderRadius: 1,
+                            mx: 0.5,
+                            pr: hoveredConvId === conv.id ? 5 : 1,
+                            "&.Mui-selected": {
+                              bgcolor: "action.selected",
+                              "&:hover": { bgcolor: "action.selected" },
+                            },
                           }}
-                        />
-                      </ListItemButton>
-                    </ListItem>
-                  ))}
-                </List>
-              </Box>
-            ))
+                        >
+                          <ListItemText
+                            primary={conv.title}
+                            primaryTypographyProps={{
+                              noWrap: true,
+                              variant: "body2",
+                              fontWeight: conv.id === activeConvId ? 600 : 400,
+                            }}
+                          />
+                        </ListItemButton>
+                      </ListItem>
+                    ))}
+                  </List>
+                </Box>
+              ))}
+            </>
           )}
+        </Box>
+
+        <Divider />
+
+        {/* App Navigation — fixed at bottom */}
+        <Box>
+          <Typography
+            variant="caption"
+            sx={{
+              px: 2, pt: 1.5, pb: 0.5,
+              display: "block",
+              color: "text.disabled",
+              fontWeight: 700,
+              textTransform: "uppercase",
+              letterSpacing: 0.6,
+              fontSize: "0.65rem",
+            }}
+          >
+            App Navigation
+          </Typography>
+          <List dense disablePadding sx={{ pb: 0.5 }}>
+            {APP_NAV.map((item) => (
+              <ListItemButton
+                key={item.to}
+                component={NavLink}
+                to={item.to}
+                end={item.end}
+                sx={{
+                  mx: 0.5,
+                  borderRadius: 1,
+                  "&.active": {
+                    bgcolor: "action.selected",
+                    "& .MuiListItemIcon-root, & .MuiListItemText-primary": {
+                      color: "primary.main",
+                      fontWeight: 600,
+                    },
+                  },
+                }}
+              >
+                <ListItemIcon sx={{ minWidth: 32 }}>{item.icon}</ListItemIcon>
+                <ListItemText
+                  primary={item.label}
+                  primaryTypographyProps={{ variant: "body2" }}
+                />
+              </ListItemButton>
+            ))}
+          </List>
+
+          <Divider />
+
+          <ListItemButton
+            onClick={handleLogout}
+            sx={{ mx: 0.5, borderRadius: 1, my: 0.5, color: "text.secondary" }}
+          >
+            <ListItemIcon sx={{ minWidth: 32 }}>
+              <LogoutIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText
+              primary="Sign out"
+              primaryTypographyProps={{ variant: "body2" }}
+            />
+          </ListItemButton>
         </Box>
       </Box>
 
-      {/* ── Chat Area ─────────────────────────────────────────────────── */}
+      {/* ── Chat Area ─────────────────────────────────────────────────────────── */}
       <Paper
         elevation={0}
         sx={{
@@ -252,12 +387,28 @@ export default function ChatPage() {
           display: "flex",
           flexDirection: "column",
           overflow: "hidden",
-          border: "1px solid",
-          borderColor: "divider",
-          borderRadius: 2,
+          borderRadius: 0,
           bgcolor: "background.default",
         }}
       >
+        {/* Header */}
+        <Box
+          sx={{
+            px: 3, py: 1.5,
+            borderBottom: "1px solid",
+            borderColor: "divider",
+            display: "flex",
+            alignItems: "center",
+            gap: 1,
+            bgcolor: "background.paper",
+          }}
+        >
+          <ChatBubbleOutlineIcon fontSize="small" sx={{ color: "text.secondary" }} />
+          <Typography variant="subtitle1" fontWeight={600}>
+            {conversations.find((c) => c.id === activeConvId)?.title ?? "New conversation"}
+          </Typography>
+        </Box>
+
         {/* Voice status banner */}
         {voiceActive && (
           <Box
@@ -271,7 +422,6 @@ export default function ChatPage() {
               color: "primary.main",
             }}
           >
-            {/* Pulsing dot */}
             <Box
               sx={{
                 width: 10, height: 10, borderRadius: "50%", bgcolor: "error.main", flexShrink: 0,
@@ -279,9 +429,7 @@ export default function ChatPage() {
                 animation: voiceState === "active" ? "pulse 1.4s ease-in-out infinite" : "none",
               }}
             />
-            
             {voiceState === "thinking" && "Looking up data…"}
-            
             {voiceState === "executing" && (
               <Box sx={{ display: "flex", alignItems: "center", gap: 1, flex: 1, minWidth: 0 }}>
                 <CircularProgress size={14} thickness={5} color="inherit" />
@@ -290,9 +438,7 @@ export default function ChatPage() {
                 </Typography>
               </Box>
             )}
-            
             {voiceState === "active" && "Listening…"}
-
             <Box sx={{ ml: "auto", opacity: 0.55, fontSize: 12, flexShrink: 0 }}>
               Volume: {Math.round(volume * 100)}%
             </Box>
@@ -315,12 +461,7 @@ export default function ChatPage() {
               <Typography variant="h6" color="text.secondary" gutterBottom>
                 How can I help you today?
               </Typography>
-              <Typography
-                variant="body2"
-                color="text.secondary"
-                align="center"
-                sx={{ maxWidth: 400 }}
-              >
+              <Typography variant="body2" color="text.secondary" align="center" sx={{ maxWidth: 400 }}>
                 Ask anything about the portfolio, MIS data, revenue trends, or alert status.
               </Typography>
             </Box>
@@ -341,7 +482,6 @@ export default function ChatPage() {
                 />
               );
             })}
-
             {error && (
               <Alert severity="error" sx={{ mt: 2 }}>
                 {error}
@@ -383,7 +523,6 @@ export default function ChatPage() {
               }}
             />
             <Box sx={{ pb: 0.5, display: "flex", alignItems: "center", gap: 0.5 }}>
-              {/* Mic button */}
               {voiceBusy ? (
                 <Box sx={{ display: "flex", alignItems: "center", px: 0.5 }}>
                   <CircularProgress size={22} />
@@ -401,7 +540,6 @@ export default function ChatPage() {
                   </IconButton>
                 </Tooltip>
               )}
-
               <IconButton
                 color="primary"
                 onClick={handleSend}
