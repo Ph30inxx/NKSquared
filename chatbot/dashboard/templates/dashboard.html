@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>{{ title }}</title>
+<style>
+  /* ── Page layout ─────────────────────────────────────────────────── */
+  @page {
+    size: A4;
+    margin: 22mm 15mm 22mm 15mm;
+    @top-center  { content: element(header); }
+    @bottom-center { content: element(footer); }
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: "DejaVu Sans", Arial, sans-serif;
+    font-size: 10pt;
+    color: #1A1A2E;
+    background: #FFFFFF;
+    line-height: 1.5;
+  }
+
+  /* ── Running header ──────────────────────────────────────────────── */
+  #page-header {
+    position: running(header);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 0 6px 0;
+    border-bottom: 2px solid #2C3E87;
+  }
+
+  .header-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .header-logo {
+    width: 36px;
+    height: 36px;
+    background: #2C3E87;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-weight: 700;
+    font-size: 14pt;
+    padding: 4px;
+  }
+
+  .header-title-block { display: flex; flex-direction: column; }
+
+  .header-org {
+    font-size: 7pt;
+    color: #888888;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+  }
+
+  .header-doc-title {
+    font-size: 11pt;
+    font-weight: 700;
+    color: #1A1A2E;
+  }
+
+  .header-subtitle {
+    font-size: 9pt;
+    color: #555555;
+  }
+
+  .header-meta {
+    text-align: right;
+    font-size: 8pt;
+    color: #888888;
+    line-height: 1.6;
+  }
+
+  /* ── Running footer ──────────────────────────────────────────────── */
+  #page-footer {
+    position: running(footer);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 4px 0;
+    border-top: 1px solid #E0E0E0;
+    font-size: 7.5pt;
+    color: #AAAAAA;
+  }
+
+  #page-footer .footer-right {
+    content: "Page " counter(page) " of " counter(pages);
+  }
+
+  /* ── Body sections ───────────────────────────────────────────────── */
+  .section { margin-bottom: 18px; }
+
+  /* KPI row */
+  .kpi-row {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 14px;
+  }
+
+  .kpi-card {
+    flex: 1;
+    min-width: 100px;
+    border: 1px solid #E0E0E0;
+    border-radius: 6px;
+    padding: 10px 12px;
+    text-align: center;
+    background: #FAFAFA;
+  }
+
+  .kpi-label {
+    font-size: 8pt;
+    color: #888888;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 4px;
+  }
+
+  .kpi-value {
+    font-size: 16pt;
+    font-weight: 700;
+    color: #2C3E87;
+  }
+
+  .kpi-delta {
+    font-size: 8pt;
+    margin-top: 2px;
+  }
+
+  .kpi-delta.positive { color: #27AE60; }
+  .kpi-delta.negative { color: #E74C3C; }
+
+  /* Full-width chart */
+  figure {
+    margin: 10px 0 4px 0;
+    page-break-inside: avoid;
+  }
+
+  figure img {
+    width: 100%;
+    display: block;
+    border-radius: 4px;
+  }
+
+  figcaption {
+    font-size: 8pt;
+    color: #777777;
+    margin-top: 4px;
+    text-align: center;
+    font-style: italic;
+  }
+
+  /* Side-by-side charts */
+  .chart-row {
+    display: flex;
+    gap: 14px;
+    page-break-inside: avoid;
+  }
+
+  .chart-row figure {
+    flex: 1;
+    margin: 0;
+  }
+
+  /* Text block */
+  .text-section { margin: 10px 0 14px 0; }
+
+  .text-section h2 {
+    font-size: 12pt;
+    font-weight: 700;
+    color: #2C3E87;
+    border-bottom: 1px solid #E8E8E8;
+    padding-bottom: 4px;
+    margin-bottom: 8px;
+  }
+
+  .text-section p {
+    font-size: 9.5pt;
+    color: #333333;
+    line-height: 1.6;
+  }
+
+  /* Page break */
+  .page-break { page-break-after: always; }
+
+  /* Table section (rendered as image — same as chart) */
+  .table-section { margin: 10px 0; page-break-inside: avoid; }
+</style>
+</head>
+<body>
+
+<!-- Running header (referenced by @top-center) -->
+<div id="page-header">
+  <div class="header-brand">
+    <div class="header-logo">NK</div>
+    <div class="header-title-block">
+      <span class="header-org">NKSquared Investment Intelligence</span>
+      <span class="header-doc-title">{{ title }}</span>
+      <span class="header-subtitle">{{ subtitle }}</span>
+    </div>
+  </div>
+  <div class="header-meta">
+    {% if period_label %}{{ period_label }}<br>{% endif %}
+    Generated {{ generated_at }}<br>
+    <span style="color:#BBBBBB;">Confidential</span>
+  </div>
+</div>
+
+<!-- Running footer (referenced by @bottom-center) -->
+<div id="page-footer">
+  <span>{{ generated_by }} &nbsp;|&nbsp; Confidential — NKSquared Internal Use Only</span>
+  <span class="footer-right"></span>
+</div>
+
+<!-- ── Dynamic body ──────────────────────────────────────────────────────── -->
+<div class="body-content">
+  {% for section in sections %}
+
+    {% if section.type == "kpi" %}
+      <div class="section kpi-section">
+        {% if section.get("heading") %}
+          <div class="text-section">
+            <h2>{{ section.heading }}</h2>
+          </div>
+        {% endif %}
+        <figure>
+          <img src="data:image/png;base64,{{ section.base64_png }}" alt="KPI Cards" />
+        </figure>
+      </div>
+
+    {% elif section.type == "chart" %}
+      <div class="section">
+        <figure>
+          <img src="data:image/png;base64,{{ section.base64_png }}" alt="{{ section.get('title', '') }}" />
+          {% if section.get("caption") %}
+            <figcaption>{{ section.caption }}</figcaption>
+          {% endif %}
+        </figure>
+      </div>
+
+    {% elif section.type == "chart_row" %}
+      <div class="section chart-row">
+        {% for item in section.charts %}
+          <figure>
+            <img src="data:image/png;base64,{{ item.base64_png }}" alt="{{ item.get('title', '') }}" />
+            {% if item.get("caption") %}
+              <figcaption>{{ item.caption }}</figcaption>
+            {% endif %}
+          </figure>
+        {% endfor %}
+      </div>
+
+    {% elif section.type == "text" %}
+      <div class="section text-section">
+        {% if section.get("heading") %}
+          <h2>{{ section.heading }}</h2>
+        {% endif %}
+        {% if section.get("body") %}
+          <p>{{ section.body }}</p>
+        {% endif %}
+      </div>
+
+    {% elif section.type == "table" %}
+      <div class="section table-section">
+        <figure>
+          <img src="data:image/png;base64,{{ section.base64_png }}" alt="{{ section.get('title', '') }}" />
+          {% if section.get("caption") %}
+            <figcaption>{{ section.caption }}</figcaption>
+          {% endif %}
+        </figure>
+      </div>
+
+    {% elif section.type == "page_break" %}
+      <div class="page-break"></div>
+
+    {% endif %}
+
+  {% endfor %}
+</div>
+
+</body>
+</html>

@@ -46,6 +46,7 @@ from chatbot.db import get_conn
 from chatbot.auth import _bearer, get_current_user_id
 from chatbot.prompts import invalidate_prompt_cache
 from chatbot.voice.router import router as voice_router
+from dashboard.server import router as dashboard_router
 
 app = FastAPI(
     title="NKSquared Investment Intelligence Chatbot",
@@ -60,6 +61,7 @@ app.add_middleware(
 )
 
 app.include_router(voice_router)
+app.include_router(dashboard_router)
 
 # _bearer and get_current_user_id are imported from chatbot.auth above
 

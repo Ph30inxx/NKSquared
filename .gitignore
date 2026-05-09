@@ -44,3 +44,10 @@ data/
 
 # Implementation Plans
 plans/
+
+# AI Dashboard — generated PDFs (runtime artefacts, not source)
+chatbot/dashboard/storage/
+
+#PDF Dashboards
+
+*.pdf
