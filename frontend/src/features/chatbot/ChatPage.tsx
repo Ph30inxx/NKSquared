@@ -22,6 +22,7 @@ import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import SendIcon from "@mui/icons-material/Send";
 import MicIcon from "@mui/icons-material/Mic";
 import MicOffIcon from "@mui/icons-material/MicOff";
+import AutoAwesomeIcon from "@mui/icons-material/AutoAwesome";
 import DashboardIcon from "@mui/icons-material/Dashboard";
 import BusinessCenterIcon from "@mui/icons-material/BusinessCenter";
 import GridOnIcon from "@mui/icons-material/GridOn";
@@ -67,6 +68,7 @@ function groupByDate(conversations: Conversation[]) {
 
 const APP_NAV = [
   { to: "/", label: "Dashboard", icon: <DashboardIcon fontSize="small" />, end: true },
+  { to: "/ai-dashboard", label: "AI Reports", icon: <AutoAwesomeIcon fontSize="small" /> },
   { to: "/portfolio", label: "Portfolio", icon: <BusinessCenterIcon fontSize="small" /> },
   { to: "/grid", label: "Grid", icon: <GridOnIcon fontSize="small" /> },
   { to: "/mis", label: "MIS", icon: <InboxIcon fontSize="small" /> },

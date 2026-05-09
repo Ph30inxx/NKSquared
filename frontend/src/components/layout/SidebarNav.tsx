@@ -1,5 +1,6 @@
 import { NavLink } from "react-router-dom";
 import DashboardIcon from "@mui/icons-material/Dashboard";
+import AutoAwesomeIcon from "@mui/icons-material/AutoAwesome";
 import BusinessCenterIcon from "@mui/icons-material/BusinessCenter";
 import CurrencyExchangeIcon from "@mui/icons-material/CurrencyExchange";
 import GridOnIcon from "@mui/icons-material/GridOn";
@@ -24,6 +25,7 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { to: "/", label: "Dashboard", icon: <DashboardIcon /> },
+  { to: "/ai-dashboard", label: "AI Reports", icon: <AutoAwesomeIcon /> },
   { to: "/portfolio", label: "Portfolio", icon: <BusinessCenterIcon /> },
   { to: "/grid", label: "Grid", icon: <GridOnIcon /> },
   { to: "/chat", label: "Chat", icon: <ChatIcon /> },

@@ -19,6 +19,7 @@ import CompanyDetailPage from "./pages/portfolio/CompanyDetailPage";
 import PortfolioGridPage from "./pages/portfolio/PortfolioGridPage";
 import PortfolioListPage from "./pages/portfolio/PortfolioListPage";
 import PublicUploadPage from "./pages/public/PublicUploadPage";
+import AIDashboardPage from "./pages/ai-dashboard/AIDashboardPage";
 
 export default function App() {
   return (
@@ -32,6 +33,7 @@ export default function App() {
             <Route path="/voice" element={<VoicePage />} />
             <Route element={<AppLayout />}>
               <Route path="/" element={<Dashboard />} />
+              <Route path="/ai-dashboard" element={<AIDashboardPage />} />
               <Route path="/portfolio" element={<PortfolioListPage />} />
               <Route path="/portfolio/:id" element={<CompanyDetailPage />} />
               <Route path="/grid" element={<PortfolioGridPage />} />
