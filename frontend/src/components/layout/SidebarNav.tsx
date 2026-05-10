@@ -29,7 +29,6 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { to: "/", label: "Dashboard", icon: <DashboardIcon fontSize="small" />, end: true },
-  { to: "/ai-dashboard", label: "AI Reports", icon: <AutoAwesomeIcon fontSize="small" />, end: true },
   { section: "Portfolio" },
   { to: "/portfolio", label: "Companies", icon: <BusinessCenterIcon fontSize="small" />, end: true },
   { to: "/grid", label: "Grid", icon: <GridOnIcon fontSize="small" />, end: true },
@@ -37,6 +36,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: "/mis", label: "Inbox", icon: <InboxIcon fontSize="small" />, end: true },
   { to: "/mis/templates", label: "Templates", icon: <RuleIcon fontSize="small" /> },
   { section: "Tools" },
+  { to: "/ai-dashboard", label: "AI Dashboard", icon: <AutoAwesomeIcon fontSize="small" />, end: true },
   { to: "/chat", label: "Chat", icon: <ChatIcon fontSize="small" />, end: true },
   { section: "Admin" },
   { to: "/admin/reminders", label: "Reminders", icon: <NotificationsActiveIcon fontSize="small" />, end: true },
