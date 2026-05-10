@@ -14,9 +14,21 @@ export interface ChatMessage {
   content: string;
 }
 
+const PINNED_KEY = "nksquared.chat.pinned";
+
+function loadPinnedIds(): Set<string> {
+  try {
+    const raw = localStorage.getItem(PINNED_KEY);
+    return raw ? new Set(JSON.parse(raw) as string[]) : new Set();
+  } catch {
+    return new Set();
+  }
+}
+
 export function useChatSession() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConvId, setActiveConvId] = useState<string | null>(null);
+  const [pinnedIds, setPinnedIds] = useState<Set<string>>(loadPinnedIds);
   const [sessionId, setSessionId] = useState<string>("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
@@ -181,6 +193,16 @@ export function useChatSession() {
     setMessages((prev: ChatMessage[]) => [...prev, message]);
   }, []);
 
+  const togglePin = useCallback((convId: string) => {
+    setPinnedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(convId)) next.delete(convId);
+      else next.add(convId);
+      localStorage.setItem(PINNED_KEY, JSON.stringify([...next]));
+      return next;
+    });
+  }, []);
+
   return {
     conversations,
     activeConvId,
@@ -195,5 +217,7 @@ export function useChatSession() {
     selectConversation,
     removeConversation,
     appendMessage,
+    pinnedIds,
+    togglePin,
   };
 }

@@ -19,6 +19,8 @@ import Typography from "@mui/material/Typography";
 import AddIcon from "@mui/icons-material/Add";
 import ChatBubbleOutlineIcon from "@mui/icons-material/ChatBubbleOutline";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
+import PushPinIcon from "@mui/icons-material/PushPin";
+import PushPinOutlinedIcon from "@mui/icons-material/PushPinOutlined";
 import SendIcon from "@mui/icons-material/Send";
 import MicIcon from "@mui/icons-material/Mic";
 import MicOffIcon from "@mui/icons-material/MicOff";
@@ -100,6 +102,8 @@ export default function ChatPage() {
     removeConversation,
     sessionId,
     appendMessage,
+    pinnedIds,
+    togglePin,
   } = useChatSession();
 
   const {
@@ -148,7 +152,72 @@ export default function ChatPage() {
   const voiceBusy   = voiceState === "connecting" || voiceState === "thinking" || voiceState === "executing";
   const voiceLive   = voiceState === "active" || voiceState === "ending";
 
-  const groups = groupByDate(conversations);
+  const pinnedConvs = conversations.filter((c) => pinnedIds.has(c.id));
+  const unpinnedConvs = conversations.filter((c) => !pinnedIds.has(c.id));
+  const groups = groupByDate(unpinnedConvs);
+
+  const renderConvItem = (conv: Conversation) => (
+    <ListItem
+      key={conv.id}
+      disablePadding
+      secondaryAction={
+        hoveredConvId === conv.id ? (
+          <Box sx={{ display: "flex", mr: 0.5 }}>
+            <Tooltip title={pinnedIds.has(conv.id) ? "Unpin" : "Pin"}>
+              <IconButton
+                size="small"
+                onClick={(e) => { e.stopPropagation(); togglePin(conv.id); }}
+                sx={{
+                  color: pinnedIds.has(conv.id) ? "primary.main" : "text.secondary",
+                  "&:hover": { color: "primary.main" },
+                }}
+              >
+                {pinnedIds.has(conv.id)
+                  ? <PushPinIcon sx={{ fontSize: 16 }} />
+                  : <PushPinOutlinedIcon sx={{ fontSize: 16 }} />}
+              </IconButton>
+            </Tooltip>
+            <Tooltip title="Delete">
+              <IconButton
+                size="small"
+                onClick={(e) => { e.stopPropagation(); removeConversation(conv.id); }}
+                sx={{ color: "text.secondary", "&:hover": { color: "error.main" } }}
+              >
+                <DeleteOutlineIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          </Box>
+        ) : pinnedIds.has(conv.id) ? (
+          <PushPinIcon sx={{ fontSize: 13, color: "primary.main", opacity: 0.7, mr: 1.5 }} />
+        ) : null
+      }
+      onMouseEnter={() => setHoveredConvId(conv.id)}
+      onMouseLeave={() => setHoveredConvId(null)}
+    >
+      <ListItemButton
+        selected={conv.id === activeConvId}
+        onClick={() => selectConversation(conv)}
+        sx={{
+          borderRadius: 1,
+          mx: 0.5,
+          pr: hoveredConvId === conv.id ? 9 : pinnedIds.has(conv.id) ? 3.5 : 1,
+          "&.Mui-selected": {
+            bgcolor: "action.selected",
+            "&:hover": { bgcolor: "action.selected" },
+          },
+        }}
+      >
+        <ListItemText
+          primary={conv.title}
+          primaryTypographyProps={{
+            noWrap: true,
+            variant: "body2",
+            fontWeight: conv.id === activeConvId ? 600 : 400,
+          }}
+        />
+      </ListItemButton>
+    </ListItem>
+  );
 
   return (
     <Box sx={{ display: "flex", height: "100vh", overflow: "hidden", bgcolor: "background.default" }}>
@@ -230,90 +299,68 @@ export default function ChatPage() {
             </Box>
           ) : (
             <>
-              <Typography
-                variant="caption"
-                sx={{
-                  px: 2, pt: 1.5, pb: 0.5,
-                  display: "block",
-                  color: "text.disabled",
-                  fontWeight: 700,
-                  textTransform: "uppercase",
-                  letterSpacing: 0.6,
-                  fontSize: "0.65rem",
-                }}
-              >
-                Recent
-              </Typography>
-              {groups.map((group) => (
-                <Box key={group.label}>
+              {/* Pinned section */}
+              {pinnedConvs.length > 0 && (
+                <>
                   <Typography
                     variant="caption"
                     sx={{
-                      px: 2, pt: 1, pb: 0.5,
-                      display: "block",
+                      px: 2, pt: 1.5, pb: 0.5,
+                      display: "flex", alignItems: "center", gap: 0.5,
                       color: "text.disabled",
-                      fontSize: "0.6rem",
-                      letterSpacing: 0.4,
+                      fontWeight: 700,
+                      textTransform: "uppercase",
+                      letterSpacing: 0.6,
+                      fontSize: "0.65rem",
                     }}
                   >
-                    {group.label}
+                    <PushPinIcon sx={{ fontSize: 11 }} /> Pinned
                   </Typography>
                   <List dense disablePadding>
-                    {group.items.map((conv) => (
-                      <ListItem
-                        key={conv.id}
-                        disablePadding
-                        secondaryAction={
-                          hoveredConvId === conv.id ? (
-                            <Tooltip title="Delete">
-                              <IconButton
-                                size="small"
-                                edge="end"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  removeConversation(conv.id);
-                                }}
-                                sx={{
-                                  color: "text.secondary",
-                                  mr: 0.5,
-                                  "&:hover": { color: "error.main" },
-                                }}
-                              >
-                                <DeleteOutlineIcon fontSize="small" />
-                              </IconButton>
-                            </Tooltip>
-                          ) : null
-                        }
-                        onMouseEnter={() => setHoveredConvId(conv.id)}
-                        onMouseLeave={() => setHoveredConvId(null)}
-                      >
-                        <ListItemButton
-                          selected={conv.id === activeConvId}
-                          onClick={() => selectConversation(conv)}
-                          sx={{
-                            borderRadius: 1,
-                            mx: 0.5,
-                            pr: hoveredConvId === conv.id ? 5 : 1,
-                            "&.Mui-selected": {
-                              bgcolor: "action.selected",
-                              "&:hover": { bgcolor: "action.selected" },
-                            },
-                          }}
-                        >
-                          <ListItemText
-                            primary={conv.title}
-                            primaryTypographyProps={{
-                              noWrap: true,
-                              variant: "body2",
-                              fontWeight: conv.id === activeConvId ? 600 : 400,
-                            }}
-                          />
-                        </ListItemButton>
-                      </ListItem>
-                    ))}
+                    {pinnedConvs.map(renderConvItem)}
                   </List>
-                </Box>
-              ))}
+                  <Divider sx={{ my: 1 }} />
+                </>
+              )}
+
+              {/* Recent (unpinned) section */}
+              {unpinnedConvs.length > 0 && (
+                <>
+                  <Typography
+                    variant="caption"
+                    sx={{
+                      px: 2, pt: pinnedConvs.length > 0 ? 0.5 : 1.5, pb: 0.5,
+                      display: "block",
+                      color: "text.disabled",
+                      fontWeight: 700,
+                      textTransform: "uppercase",
+                      letterSpacing: 0.6,
+                      fontSize: "0.65rem",
+                    }}
+                  >
+                    Recent
+                  </Typography>
+                  {groups.map((group) => (
+                    <Box key={group.label}>
+                      <Typography
+                        variant="caption"
+                        sx={{
+                          px: 2, pt: 1, pb: 0.5,
+                          display: "block",
+                          color: "text.disabled",
+                          fontSize: "0.6rem",
+                          letterSpacing: 0.4,
+                        }}
+                      >
+                        {group.label}
+                      </Typography>
+                      <List dense disablePadding>
+                        {group.items.map(renderConvItem)}
+                      </List>
+                    </Box>
+                  ))}
+                </>
+              )}
             </>
           )}
         </Box>
