@@ -27,14 +27,14 @@ export default function ChatWidget() {
   const bottomRef         = useRef<HTMLDivElement>(null);
 
   const {
-    messages, isStreaming, error, send, thumbsUp, reset,
+    messages, isStreaming, error, send, thumbsUp, newChat,
     sessionId, appendMessage,
   } = useChatSession();
 
   const {
     state: voiceState,
     volume,
-    transcript,
+    turns,
     activeActionSummary,
     start: startVoice,
     stop: stopVoice,
@@ -45,14 +45,13 @@ export default function ChatWidget() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // Surface voice transcripts into the chat message list
+  // Surface new voice turns into the chat message list
+  const prevTurnsLen = useRef(0);
   useEffect(() => {
-    if (transcript) {
-      appendMessage({ role: "assistant", content: transcript });
-    }
-    // appendMessage is stable — intentionally omit transcript from deps
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [transcript]);
+    const newTurns = turns.slice(prevTurnsLen.current);
+    newTurns.forEach((t) => appendMessage({ role: t.role, content: t.content }));
+    prevTurnsLen.current = turns.length;
+  }, [turns, appendMessage]);
 
   // Hide widget on pages that don't need it
   if (location.pathname === "/chat") return null;
@@ -107,7 +106,7 @@ export default function ChatWidget() {
           </Typography>
           <Box>
             <Tooltip title="New conversation">
-              <IconButton size="small" onClick={reset} disabled={voiceActive}>
+              <IconButton size="small" onClick={newChat} disabled={voiceActive}>
                 <RefreshIcon fontSize="small" />
               </IconButton>
             </Tooltip>
@@ -125,9 +124,9 @@ export default function ChatWidget() {
             sx={{
               px: 2, py: 0.75,
               display: "flex", alignItems: "center", gap: 1,
-              bgcolor: "primary.50",
+              bgcolor: (t) => `${t.palette.primary.main}12`,
               borderBottom: "1px solid",
-              borderColor: "primary.100",
+              borderColor: (t) => `${t.palette.primary.main}28`,
               fontSize: 12,
               color: "primary.main",
             }}

@@ -1,5 +1,6 @@
 import Box from "@mui/material/Box";
 import CircularProgress from "@mui/material/CircularProgress";
+import Divider from "@mui/material/Divider";
 import Paper from "@mui/material/Paper";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
@@ -26,9 +27,9 @@ export default function ChartCard({
   children,
 }: ChartCardProps) {
   return (
-    <Paper elevation={1} sx={{ p: 2 }}>
-      <Stack spacing={0.5} sx={{ mb: 1 }}>
-        <Typography variant="subtitle1" component="h3">
+    <Paper sx={{ overflow: "hidden" }}>
+      <Box sx={{ px: 2.5, py: 2 }}>
+        <Typography variant="subtitle2" component="h3" sx={{ fontWeight: 700 }}>
           {title}
         </Typography>
         {subtitle && (
@@ -36,31 +37,20 @@ export default function ChartCard({
             {subtitle}
           </Typography>
         )}
-      </Stack>
-      <Box sx={{ height, position: "relative" }}>
+      </Box>
+      <Divider />
+      <Box sx={{ height, position: "relative", p: 1 }}>
         {loading ? (
-          <Stack
-            alignItems="center"
-            justifyContent="center"
-            sx={{ height: "100%" }}
-          >
-            <CircularProgress size={24} />
+          <Stack alignItems="center" justifyContent="center" sx={{ height: "100%" }}>
+            <CircularProgress size={28} />
           </Stack>
         ) : error ? (
-          <Stack
-            alignItems="center"
-            justifyContent="center"
-            sx={{ height: "100%" }}
-          >
-            <Typography color="error">{error}</Typography>
+          <Stack alignItems="center" justifyContent="center" sx={{ height: "100%" }}>
+            <Typography color="error" variant="body2">{error}</Typography>
           </Stack>
         ) : empty ? (
-          <Stack
-            alignItems="center"
-            justifyContent="center"
-            sx={{ height: "100%" }}
-          >
-            <Typography color="text.secondary">{emptyMessage}</Typography>
+          <Stack alignItems="center" justifyContent="center" sx={{ height: "100%" }}>
+            <Typography color="text.secondary" variant="body2">{emptyMessage}</Typography>
           </Stack>
         ) : (
           children

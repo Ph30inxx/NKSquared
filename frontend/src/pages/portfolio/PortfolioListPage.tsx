@@ -2,10 +2,13 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import AddIcon from "@mui/icons-material/Add";
 import FileDownloadIcon from "@mui/icons-material/FileDownload";
+import SearchIcon from "@mui/icons-material/Search";
 import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
+import Chip from "@mui/material/Chip";
 import CircularProgress from "@mui/material/CircularProgress";
+import InputAdornment from "@mui/material/InputAdornment";
 import MenuItem from "@mui/material/MenuItem";
 import Paper from "@mui/material/Paper";
 import Stack from "@mui/material/Stack";
@@ -59,10 +62,15 @@ export default function PortfolioListPage() {
 
   return (
     <Stack spacing={3}>
-      <Stack direction="row" justifyContent="space-between" alignItems="center">
-        <Typography variant="h4" component="h1">
-          Portfolio
-        </Typography>
+      <Stack direction="row" justifyContent="space-between" alignItems="flex-start">
+        <Box>
+          <Typography variant="h4" component="h1">
+            Portfolio
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
+            Browse and manage all portfolio companies.
+          </Typography>
+        </Box>
         <Stack direction="row" spacing={1}>
           <Button
             variant="outlined"
@@ -85,7 +93,7 @@ export default function PortfolioListPage() {
       <Paper sx={{ p: 2 }}>
         <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
           <TextField
-            label="Search name"
+            placeholder="Search company name…"
             size="small"
             value={q}
             onChange={(e) => {
@@ -93,6 +101,13 @@ export default function PortfolioListPage() {
               setPage(0);
             }}
             fullWidth
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position="start">
+                  <SearchIcon sx={{ fontSize: 18, color: "text.disabled" }} />
+                </InputAdornment>
+              ),
+            }}
           />
           <TextField
             label="Sector"
@@ -176,27 +191,77 @@ export default function PortfolioListPage() {
                       onClick={() => navigate(`/portfolio/${c.id}`)}
                       sx={{ cursor: "pointer" }}
                     >
-                      <TableCell>{c.display_name || c.company_name}</TableCell>
-                      <TableCell>{c.sector ?? "—"}</TableCell>
-                      <TableCell>{c.portfolio_type?.replace(/_/g, " ") ?? "—"}</TableCell>
-                      <TableCell>{c.investment_status?.replace(/_/g, " ") ?? "—"}</TableCell>
-                      <TableCell align="right">
-                        {formatCr(
-                          c.investment_value_cr ? Math.abs(Number(c.investment_value_cr)) : null,
-                        )}
+                      <TableCell>
+                        <Typography variant="body2" fontWeight={500}>
+                          {c.display_name || c.company_name}
+                        </Typography>
                       </TableCell>
-                      <TableCell align="right">{formatCr(c.current_value_cr)}</TableCell>
-                      <TableCell align="right" sx={{ color: moicColor(c.moic) }}>
-                        {formatMoic(c.moic)}
+                      <TableCell>
+                        <Typography variant="body2" color="text.secondary">
+                          {c.sector ?? "—"}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        {c.portfolio_type ? (
+                          <Chip
+                            label={c.portfolio_type.replace(/_/g, " ")}
+                            size="small"
+                            variant="outlined"
+                            sx={{ fontSize: "0.7rem" }}
+                          />
+                        ) : "—"}
+                      </TableCell>
+                      <TableCell>
+                        {c.investment_status ? (
+                          <Chip
+                            label={c.investment_status.replace(/_/g, " ")}
+                            size="small"
+                            color={c.investment_status === "ACTIVE" ? "success" : "default"}
+                            variant={c.investment_status === "ACTIVE" ? "filled" : "outlined"}
+                            sx={{ fontSize: "0.7rem" }}
+                          />
+                        ) : "—"}
+                      </TableCell>
+                      <TableCell align="right">
+                        <Typography variant="body2" fontFamily="monospace">
+                          {formatCr(
+                            c.investment_value_cr ? Math.abs(Number(c.investment_value_cr)) : null,
+                          )}
+                        </Typography>
+                      </TableCell>
+                      <TableCell align="right">
+                        <Typography variant="body2" fontFamily="monospace">
+                          {formatCr(c.current_value_cr)}
+                        </Typography>
+                      </TableCell>
+                      <TableCell align="right">
+                        <Typography
+                          variant="body2"
+                          fontWeight={600}
+                          fontFamily="monospace"
+                          sx={{ color: moicColor(c.moic) }}
+                        >
+                          {formatMoic(c.moic)}
+                        </Typography>
                       </TableCell>
                     </TableRow>
                   ))}
                   {data && data.items.length === 0 && (
                     <TableRow>
                       <TableCell colSpan={7}>
-                        <Box py={4} textAlign="center" color="text.secondary">
-                          No companies match your filters. Click <strong>New company</strong> to add one.
-                        </Box>
+                        <Stack alignItems="center" spacing={1} py={5}>
+                          <Typography variant="body2" color="text.secondary">
+                            No companies match your filters.
+                          </Typography>
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            startIcon={<AddIcon />}
+                            onClick={() => setCreateOpen(true)}
+                          >
+                            Add first company
+                          </Button>
+                        </Stack>
                       </TableCell>
                     </TableRow>
                   )}

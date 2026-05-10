@@ -83,10 +83,15 @@ export default function ForexRatesPage() {
 
   return (
     <Stack spacing={3}>
-      <Stack direction="row" justifyContent="space-between" alignItems="center">
-        <Typography variant="h4" component="h1">
-          FX rates
-        </Typography>
+      <Stack direction="row" justifyContent="space-between" alignItems="flex-start">
+        <Box>
+          <Typography variant="h4" component="h1">
+            FX Rates
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
+            Currency exchange rates used for INR conversions.
+          </Typography>
+        </Box>
         <Button
           variant="contained"
           startIcon={<AddIcon />}
@@ -140,12 +145,50 @@ export default function ForexRatesPage() {
               </TableHead>
               <TableBody>
                 {rates.data?.map((r) => (
-                  <TableRow key={r.id}>
-                    <TableCell>{formatDate(r.effective_date)}</TableCell>
-                    <TableCell>{r.from_currency}</TableCell>
-                    <TableCell>{r.to_currency}</TableCell>
-                    <TableCell align="right">{Number(r.rate).toFixed(4)}</TableCell>
-                    <TableCell>{r.source ?? "—"}</TableCell>
+                  <TableRow key={r.id} hover>
+                    <TableCell>
+                      <Typography variant="body2">{formatDate(r.effective_date)}</Typography>
+                    </TableCell>
+                    <TableCell>
+                      <Box
+                        component="code"
+                        sx={{
+                          fontSize: "0.8125rem",
+                          fontWeight: 600,
+                          bgcolor: "action.hover",
+                          px: 0.75,
+                          py: 0.25,
+                          borderRadius: 1,
+                        }}
+                      >
+                        {r.from_currency}
+                      </Box>
+                    </TableCell>
+                    <TableCell>
+                      <Box
+                        component="code"
+                        sx={{
+                          fontSize: "0.8125rem",
+                          fontWeight: 600,
+                          bgcolor: "action.hover",
+                          px: 0.75,
+                          py: 0.25,
+                          borderRadius: 1,
+                        }}
+                      >
+                        {r.to_currency}
+                      </Box>
+                    </TableCell>
+                    <TableCell align="right">
+                      <Typography variant="body2" fontFamily="monospace" fontWeight={500}>
+                        {Number(r.rate).toFixed(4)}
+                      </Typography>
+                    </TableCell>
+                    <TableCell>
+                      <Typography variant="caption" color="text.secondary">
+                        {r.source ?? "—"}
+                      </Typography>
+                    </TableCell>
                   </TableRow>
                 ))}
                 {rates.data && rates.data.length === 0 && (

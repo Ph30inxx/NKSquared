@@ -3,12 +3,15 @@ import { useNavigate } from "react-router-dom";
 import AddIcon from "@mui/icons-material/Add";
 import FileDownloadIcon from "@mui/icons-material/FileDownload";
 import RuleIcon from "@mui/icons-material/Rule";
+import SearchIcon from "@mui/icons-material/Search";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Chip from "@mui/material/Chip";
 import CircularProgress from "@mui/material/CircularProgress";
+import InputAdornment from "@mui/material/InputAdornment";
 import Paper from "@mui/material/Paper";
 import Stack from "@mui/material/Stack";
+import Tooltip from "@mui/material/Tooltip";
 import Table from "@mui/material/Table";
 import TableBody from "@mui/material/TableBody";
 import TableCell from "@mui/material/TableCell";
@@ -65,10 +68,15 @@ export default function MisInboxPage() {
 
   return (
     <Stack spacing={3}>
-      <Stack direction="row" justifyContent="space-between" alignItems="center">
-        <Typography variant="h4" component="h1">
-          MIS Inbox
-        </Typography>
+      <Stack direction="row" justifyContent="space-between" alignItems="flex-start">
+        <Box>
+          <Typography variant="h4" component="h1">
+            MIS Inbox
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
+            Review and approve monthly information submissions.
+          </Typography>
+        </Box>
         <Stack direction="row" spacing={1}>
           <Button
             variant="outlined"
@@ -114,15 +122,21 @@ export default function MisInboxPage() {
             ))}
           </ToggleButtonGroup>
           <TextField
-            label="Company code"
+            placeholder="Filter by company code…"
             size="small"
             value={companyFilter}
             onChange={(e) => {
               setCompanyFilter(e.target.value);
               setPage(0);
             }}
-            placeholder="company_01"
-            sx={{ minWidth: 200 }}
+            sx={{ minWidth: 220 }}
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position="start">
+                  <SearchIcon sx={{ fontSize: 18, color: "text.disabled" }} />
+                </InputAdornment>
+              ),
+            }}
           />
         </Stack>
       </Paper>
@@ -156,10 +170,24 @@ export default function MisInboxPage() {
                       onClick={() => navigate(`/mis/${s.id}`)}
                       sx={{ cursor: "pointer" }}
                     >
-                      <TableCell>{s.id}</TableCell>
-                      <TableCell>{s.company_id}</TableCell>
-                      <TableCell>{periodLabel(s.period_year, s.period_month)}</TableCell>
-                      <TableCell>{s.fiscal_year}</TableCell>
+                      <TableCell sx={{ color: "text.disabled", fontSize: "0.75rem" }}>
+                        #{s.id}
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="body2" fontWeight={500}>
+                          {s.company_id}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="body2">
+                          {periodLabel(s.period_year, s.period_month)}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="caption" color="text.secondary">
+                          {s.fiscal_year}
+                        </Typography>
+                      </TableCell>
                       <TableCell>
                         <Chip
                           label={s.status}
@@ -167,9 +195,37 @@ export default function MisInboxPage() {
                           size="small"
                         />
                       </TableCell>
-                      <TableCell>{s.source_file_name ?? "—"}</TableCell>
-                      <TableCell>{s.uploaded_at ? formatDate(s.uploaded_at) : "—"}</TableCell>
-                      <TableCell>{s.reviewed_at ? formatDate(s.reviewed_at) : "—"}</TableCell>
+                      <TableCell>
+                        {s.source_file_name ? (
+                          <Tooltip title={s.source_file_name}>
+                            <Typography
+                              variant="caption"
+                              sx={{
+                                maxWidth: 160,
+                                display: "block",
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                                whiteSpace: "nowrap",
+                                color: "text.secondary",
+                              }}
+                            >
+                              {s.source_file_name}
+                            </Typography>
+                          </Tooltip>
+                        ) : (
+                          <Typography variant="caption" color="text.disabled">—</Typography>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="caption" color="text.secondary">
+                          {s.uploaded_at ? formatDate(s.uploaded_at) : "—"}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="caption" color="text.secondary">
+                          {s.reviewed_at ? formatDate(s.reviewed_at) : "—"}
+                        </Typography>
+                      </TableCell>
                     </TableRow>
                   ))}
                   {data && data.items.length === 0 && (
