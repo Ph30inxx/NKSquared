@@ -20,7 +20,10 @@ CHATBOT_TABLES = [
     "mis_bu_monthly",
     "mis_outlet_monthly",
     "mis_submissions",
+    "mis_anomalies",
+    "portfolio_categories",
     "nk_validated_queries",
+    "portfolio_aggregates_mv",
 ]
 
 _cache: str | None = None

@@ -53,9 +53,9 @@ export async function fetchHistory(): Promise<DashboardJob[]> {
   return data.dashboards as DashboardJob[];
 }
 
-export function directDownload(dashboardId: string, title: string): void {
+export function directDownload(dashboardId: string, title: string, format: "pdf" | "html" = "pdf"): void {
   const token = useAuthStore.getState().accessToken;
-  fetch(`${DASHBOARD_BASE}/${dashboardId}/download`, {
+  fetch(`${DASHBOARD_BASE}/${dashboardId}/download?format=${format}`, {
     headers: { Authorization: `Bearer ${token}` },
   })
     .then((r) => r.blob())
@@ -63,8 +63,18 @@ export function directDownload(dashboardId: string, title: string): void {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `${title || "dashboard"}.pdf`;
+      a.download = `${title || "dashboard"}.${format}`;
       a.click();
       URL.revokeObjectURL(url);
     });
+}
+
+export async function getPreviewUrl(dashboardId: string): Promise<string> {
+  const token = useAuthStore.getState().accessToken;
+  const res = await fetch(`${DASHBOARD_BASE}/${dashboardId}/download?format=pdf`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error("Failed to load PDF preview");
+  const blob = await res.blob();
+  return URL.createObjectURL(blob);
 }

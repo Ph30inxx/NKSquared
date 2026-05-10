@@ -21,8 +21,9 @@ import HourglassEmptyIcon from "@mui/icons-material/HourglassEmpty";
 import PictureAsPdfIcon from "@mui/icons-material/PictureAsPdf";
 import SendIcon from "@mui/icons-material/Send";
 import SyncIcon from "@mui/icons-material/Sync";
+import CodeIcon from "@mui/icons-material/Code";
 
-import { type DashboardJob, type SSEEvent, directDownload, fetchHistory, startGeneration } from "./dashboardApi";
+import { type DashboardJob, type SSEEvent, directDownload, fetchHistory, startGeneration, getPreviewUrl } from "./dashboardApi";
 
 // ── Tool label map ────────────────────────────────────────────────────────────
 const TOOL_LABELS: Record<string, string> = {
@@ -86,6 +87,7 @@ export default function AIDashboardPage() {
   const [history, setHistory] = useState<DashboardJob[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(true);
   const [generationSecs, setGenerationSecs] = useState(0);
+  const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const logEndRef = useRef<HTMLDivElement>(null);
 
@@ -130,6 +132,7 @@ export default function AIDashboardPage() {
     setProgressLog([]);
     setReadyInfo(null);
     setErrorMsg(null);
+    setPdfPreviewUrl(null);
 
     try {
       const res = await startGeneration(q);
@@ -178,6 +181,9 @@ export default function AIDashboardPage() {
             setReadyInfo(event);
             setState("ready");
             loadHistory();
+            if (event.dashboard_id) {
+              getPreviewUrl(event.dashboard_id).then(url => setPdfPreviewUrl(url)).catch(() => {});
+            }
           } else if (event.type === "error") {
             setErrorMsg(event.message ?? "Generation failed");
             setState("error");
@@ -459,18 +465,42 @@ export default function AIDashboardPage() {
                       {readyInfo.summary}
                     </Typography>
                   )}
-                  <Button
-                    variant="contained"
-                    color="success"
-                    startIcon={<DownloadIcon />}
-                    onClick={() => directDownload(readyInfo.dashboard_id!, readyInfo.title ?? "dashboard")}
-                    sx={{ mt: 2, textTransform: "none", fontWeight: 600, borderRadius: 2 }}
-                  >
-                    Download PDF
-                  </Button>
+                  <Box sx={{ display: "flex", gap: 2, mt: 2 }}>
+                    <Button
+                      variant="contained"
+                      color="success"
+                      startIcon={<DownloadIcon />}
+                      onClick={() => directDownload(readyInfo.dashboard_id!, readyInfo.title ?? "dashboard", "pdf")}
+                      sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2 }}
+                    >
+                      Download PDF
+                    </Button>
+                    <Button
+                      variant="outlined"
+                      color="primary"
+                      startIcon={<CodeIcon />}
+                      onClick={() => directDownload(readyInfo.dashboard_id!, readyInfo.title ?? "dashboard", "html")}
+                      sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2 }}
+                    >
+                      Download HTML
+                    </Button>
+                  </Box>
                 </Box>
               </Box>
             </Paper>
+
+            {/* PDF Viewer */}
+            {pdfPreviewUrl && (
+              <Paper variant="outlined" sx={{ flex: 1, borderRadius: 2, overflow: "hidden", minHeight: 600 }}>
+                <iframe
+                  src={pdfPreviewUrl}
+                  width="100%"
+                  height="100%"
+                  style={{ border: "none" }}
+                  title="PDF Preview"
+                />
+              </Paper>
+            )}
 
             {/* Progress log review */}
             {progressLog.length > 0 && (

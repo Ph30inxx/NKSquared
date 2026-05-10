@@ -1,14 +1,17 @@
 """
-Dashboard chart tools — 9 chart generation tools.
+Dashboard chart tools — 12 chart generation tools.
 
 Every tool:
   - Uses matplotlib to render the chart
   - Renders into io.BytesIO, base64-encodes the PNG
   - Stores the result in _chart_store keyed by dashboard_id + ":" + chart_id
   - Returns {"chart_id": str, "title": str, "base64_png": str}
+  - Is wrapped with @_thread_safe_chart for concurrency safety and error fallback
 """
 import base64
+import functools
 import io
+import threading
 from typing import List, Optional
 
 import matplotlib
@@ -21,20 +24,31 @@ import numpy as np
 # Keyed by "{dashboard_id}:{chart_id}" — populated during agent run,
 # consumed by compile_dashboard, then purged.
 _chart_store: dict[str, str] = {}
+_chart_lock = threading.Lock()
+_mpl_lock = threading.Lock()
 
 
 def _store(dashboard_id: str, chart_id: str, b64: str) -> None:
-    _chart_store[f"{dashboard_id}:{chart_id}"] = b64
+    with _chart_lock:
+        _chart_store[f"{dashboard_id}:{chart_id}"] = b64
 
 
 def get_chart(dashboard_id: str, chart_id: str) -> Optional[str]:
-    return _chart_store.get(f"{dashboard_id}:{chart_id}")
+    with _chart_lock:
+        return _chart_store.get(f"{dashboard_id}:{chart_id}")
+
+
+def get_all_charts(dashboard_id: str) -> dict[str, str]:
+    with _chart_lock:
+        prefix = f"{dashboard_id}:"
+        return {k[len(prefix):]: v for k, v in _chart_store.items() if k.startswith(prefix)}
 
 
 def purge_dashboard(dashboard_id: str) -> None:
-    keys = [k for k in _chart_store if k.startswith(f"{dashboard_id}:")]
-    for k in keys:
-        del _chart_store[k]
+    with _chart_lock:
+        keys = [k for k in _chart_store if k.startswith(f"{dashboard_id}:")]
+        for k in keys:
+            del _chart_store[k]
 
 
 # ── Shared NK style ───────────────────────────────────────────────────────────
@@ -69,10 +83,60 @@ def _to_b64(fig) -> str:
     return base64.b64encode(buf.read()).decode("utf-8")
 
 
+def _error_chart(title: str, message: str) -> str:
+    """Generate a placeholder chart image for error states."""
+    fig, ax = plt.subplots(figsize=(10, 5))
+    ax.text(0.5, 0.55, "\u26A0  Data Unavailable", ha="center", va="center",
+            fontsize=16, color="#E74C3C", fontweight="bold", transform=ax.transAxes)
+    ax.text(0.5, 0.40, message[:120], ha="center", va="center",
+            fontsize=10, color="#999999", transform=ax.transAxes, style="italic")
+    ax.set_title(title, fontsize=13, fontweight="bold", color="#1A1A2E", pad=10)
+    ax.axis("off")
+    fig.patch.set_facecolor("#FAFAFA")
+    return _to_b64(fig)
+
+
+def _thread_safe_chart(func):
+    """Decorator: wraps chart generation with matplotlib lock and error fallback."""
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        with _mpl_lock:
+            try:
+                return func(*args, **kwargs)
+            except Exception as exc:
+                cid = kwargs.get("chart_id") or (args[1] if len(args) > 1 else "unknown")
+                did = kwargs.get("dashboard_id") or (args[0] if args else "unknown")
+                ttl = kwargs.get("title") or (args[2] if len(args) > 2 else "Chart")
+                b64 = _error_chart(ttl, str(exc))
+                _store(did, cid, b64)
+                return {"chart_id": cid, "title": ttl, "base64_png": b64, "error": str(exc)}
+    return wrapper
+
+
+def _draw_reference_lines(ax, reference_lines: List[dict], horizontal: bool = True):
+    """Draw benchmark/target reference lines on a chart axis."""
+    if not reference_lines:
+        return
+    for ref in reference_lines:
+        val = ref.get("value")
+        if val is None:
+            continue
+        color = ref.get("color", "#FF6B6B")
+        style = ref.get("style", "--")
+        label = ref.get("label", "")
+        if horizontal:
+            ax.axhline(val, color=color, linestyle=style, linewidth=1.2,
+                       label=label, zorder=5, alpha=0.85)
+        else:
+            ax.axvline(val, color=color, linestyle=style, linewidth=1.2,
+                       label=label, zorder=5, alpha=0.85)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Tool 1 — create_bar_chart
 # ─────────────────────────────────────────────────────────────────────────────
 
+@_thread_safe_chart
 def create_bar_chart(
     dashboard_id: str,
     chart_id: str,
@@ -84,6 +148,7 @@ def create_bar_chart(
     stacked: bool = False,
     horizontal: bool = False,
     value_labels: bool = True,
+    reference_lines: Optional[List[dict]] = None,
 ) -> dict:
     """
     Generate a bar chart (vertical, horizontal, or stacked).
@@ -97,6 +162,7 @@ def create_bar_chart(
         stacked: True for stacked bars.
         horizontal: True for horizontal bars (better for long labels).
         value_labels: Show value on top of each bar.
+        reference_lines: [{value, label, color?, style?}] — benchmark/target overlay lines.
 
     Returns:
         {chart_id, title, base64_png}
@@ -147,8 +213,9 @@ def create_bar_chart(
         ax.set_xticklabels(labels, rotation=rot, ha="right" if rot else "center", fontsize=9)
 
     _apply_nk_style(ax, title, x_label, y_label)
+    _draw_reference_lines(ax, reference_lines, horizontal=not horizontal)
 
-    if n_ds > 1:
+    if n_ds > 1 or reference_lines:
         ax.legend(fontsize=9, framealpha=0)
 
     fig.tight_layout(pad=1.5)
@@ -161,6 +228,7 @@ def create_bar_chart(
 # Tool 2 — create_line_chart
 # ─────────────────────────────────────────────────────────────────────────────
 
+@_thread_safe_chart
 def create_line_chart(
     dashboard_id: str,
     chart_id: str,
@@ -171,6 +239,7 @@ def create_line_chart(
     y_label: str = "",
     annotate_last: bool = True,
     fill: bool = False,
+    reference_lines: Optional[List[dict]] = None,
 ) -> dict:
     """
     Generate a line chart for time-series data.
@@ -179,6 +248,7 @@ def create_line_chart(
         datasets: [{label, values, color?, linestyle?}]
         annotate_last: Label the last data point value.
         fill: Shade area under each line.
+        reference_lines: [{value, label, color?, style?}] — benchmark/target overlay lines.
 
     Returns:
         {chart_id, title, base64_png}
@@ -203,7 +273,8 @@ def create_line_chart(
     rot = 45 if len(labels) > 5 else 0
     ax.set_xticklabels(labels, rotation=rot, ha="right" if rot else "center", fontsize=9)
     _apply_nk_style(ax, title, x_label, y_label)
-    if len(datasets) > 1:
+    _draw_reference_lines(ax, reference_lines)
+    if len(datasets) > 1 or reference_lines:
         ax.legend(fontsize=9, framealpha=0)
 
     fig.tight_layout(pad=1.5)
@@ -216,6 +287,7 @@ def create_line_chart(
 # Tool 3 — create_pie_chart
 # ─────────────────────────────────────────────────────────────────────────────
 
+@_thread_safe_chart
 def create_pie_chart(
     dashboard_id: str,
     chart_id: str,
@@ -295,6 +367,7 @@ def create_pie_chart(
 # Tool 4 — create_kpi_cards
 # ─────────────────────────────────────────────────────────────────────────────
 
+@_thread_safe_chart
 def create_kpi_cards(
     dashboard_id: str,
     chart_id: str,
@@ -304,8 +377,9 @@ def create_kpi_cards(
     Generate a row of KPI summary cards.
 
     Args:
-        metrics: [{label, value, unit?, delta?, delta_label?, color?}]
+        metrics: [{label, value, unit?, delta?, delta_label?, color?, rag?}]
                  e.g. {label:"Total AUM", value:420, unit:"Cr", delta:+5.2, delta_label:"vs last quarter"}
+                 rag: optional "red" | "amber" | "green" — draws a coloured RAG border on the card.
 
     Returns:
         {chart_id, title, base64_png}
@@ -340,6 +414,14 @@ def create_kpi_cards(
             spine.set_visible(True)
             spine.set_color("#E0E0E0")
             spine.set_linewidth(0.8)
+
+        # RAG (Red/Amber/Green) border — overrides default border colour
+        _RAG_COLORS = {"red": "#E74C3C", "amber": "#F39C12", "green": "#27AE60"}
+        rag = m.get("rag")
+        if rag and rag.lower() in _RAG_COLORS:
+            for spine in ax.spines.values():
+                spine.set_color(_RAG_COLORS[rag.lower()])
+                spine.set_linewidth(2.5)
 
         color = m.get("color", NK_COLORS[0])
         val = m.get("value")
@@ -386,6 +468,7 @@ def create_kpi_cards(
 # Tool 5 — create_table_image
 # ─────────────────────────────────────────────────────────────────────────────
 
+@_thread_safe_chart
 def create_table_image(
     dashboard_id: str,
     chart_id: str,
@@ -462,6 +545,7 @@ def create_table_image(
 # Tool 6 — create_waterfall_chart  (NEW)
 # ─────────────────────────────────────────────────────────────────────────────
 
+@_thread_safe_chart
 def create_waterfall_chart(
     dashboard_id: str,
     chart_id: str,
@@ -554,6 +638,7 @@ def create_waterfall_chart(
 # Tool 7 — create_combo_chart  (NEW)
 # ─────────────────────────────────────────────────────────────────────────────
 
+@_thread_safe_chart
 def create_combo_chart(
     dashboard_id: str,
     chart_id: str,
@@ -564,6 +649,7 @@ def create_combo_chart(
     bar_y_label: str = "₹ Lacs",
     line_y_label: str = "%",
     bar_stacked: bool = False,
+    reference_lines: Optional[List[dict]] = None,
 ) -> dict:
     """
     Generate a combo chart: bars on left Y-axis + lines on right Y-axis.
@@ -573,6 +659,7 @@ def create_combo_chart(
     Args:
         bar_datasets: [{label, values, color?}] — left Y-axis
         line_datasets: [{label, values, color?}] — right Y-axis (%)
+        reference_lines: [{value, label, color?, style?}] — benchmark/target overlay lines (drawn on left Y-axis).
 
     Returns:
         {chart_id, title, base64_png}
@@ -609,6 +696,7 @@ def create_combo_chart(
     ax.set_xticklabels(labels, rotation=30 if n > 6 else 0,
                        ha="right" if n > 6 else "center", fontsize=9)
     _apply_nk_style(ax, title, "", bar_y_label)
+    _draw_reference_lines(ax, reference_lines)
 
     ax2.set_ylabel(line_y_label, fontsize=10, color="#444444")
     ax2.tick_params(colors="#444444", labelsize=9)
@@ -618,7 +706,8 @@ def create_combo_chart(
     # Combined legend
     handles1, labels1 = ax.get_legend_handles_labels()
     handles2, labels2 = ax2.get_legend_handles_labels()
-    ax.legend(handles1 + handles2, labels1 + labels2, fontsize=9, framealpha=0, loc="upper left")
+    if handles1 or handles2 or reference_lines:
+        ax.legend(handles1 + handles2, labels1 + labels2, fontsize=9, framealpha=0, loc="upper left")
 
     fig.tight_layout()
     b64 = _to_b64(fig)
@@ -630,6 +719,7 @@ def create_combo_chart(
 # Tool 8 — create_scatter_chart  (NEW)
 # ─────────────────────────────────────────────────────────────────────────────
 
+@_thread_safe_chart
 def create_scatter_chart(
     dashboard_id: str,
     chart_id: str,
@@ -701,6 +791,7 @@ def create_scatter_chart(
 # Tool 9 — create_stacked_area_chart  (NEW)
 # ─────────────────────────────────────────────────────────────────────────────
 
+@_thread_safe_chart
 def create_stacked_area_chart(
     dashboard_id: str,
     chart_id: str,
@@ -747,6 +838,167 @@ def create_stacked_area_chart(
         ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f"{v:.0f}%"))
 
     ax.legend(loc="upper left", fontsize=9, framealpha=0)
+    fig.tight_layout()
+    b64 = _to_b64(fig)
+    _store(dashboard_id, chart_id, b64)
+    return {"chart_id": chart_id, "title": title, "base64_png": b64}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Tool 10 — create_bullet_chart  (NEW)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@_thread_safe_chart
+def create_bullet_chart(
+    dashboard_id: str,
+    chart_id: str,
+    title: str,
+    metrics: List[dict],
+) -> dict:
+    """
+    Generate a bullet chart for actual vs target comparisons.
+
+    Args:
+        metrics: [{label: str, actual: float, target: float, ranges: List[float]}]
+                 ranges should be 3 values like [poor_max, ok_max, good_max]
+
+    Returns:
+        {chart_id, title, base64_png}
+    """
+    fig, ax = plt.subplots(figsize=(10, len(metrics) * 1.0 + 1))
+    
+    # Configuration
+    h = 0.5
+    y_pos = np.arange(len(metrics))
+    
+    for i, m in enumerate(metrics):
+        ranges = m.get('ranges', [])
+        if len(ranges) == 3:
+            ax.barh(y_pos[i], ranges[2], color='#EEEEEE', height=h)
+            ax.barh(y_pos[i], ranges[1], color='#DDDDDD', height=h)
+            ax.barh(y_pos[i], ranges[0], color='#CCCCCC', height=h)
+            
+        ax.barh(y_pos[i], m.get('actual', 0), color='#2C3E87', height=h/2)
+        ax.plot([m.get('target', 0), m.get('target', 0)], [y_pos[i]-h/1.5, y_pos[i]+h/1.5], color='#E74C3C', linewidth=3)
+        
+    ax.set_yticks(y_pos)
+    ax.set_yticklabels([m.get('label', '') for m in metrics])
+    _apply_nk_style(ax, title, '', '')
+    
+    # Legend for ranges, actual, target
+    custom_lines = [
+        mpatches.Patch(color='#CCCCCC', label='Poor'),
+        mpatches.Patch(color='#DDDDDD', label='Ok'),
+        mpatches.Patch(color='#EEEEEE', label='Good'),
+        mpatches.Patch(color='#2C3E87', label='Actual'),
+        matplotlib.lines.Line2D([0], [0], color='#E74C3C', lw=3, label='Target')
+    ]
+    ax.legend(handles=custom_lines, loc='upper center', bbox_to_anchor=(0.5, -0.1), ncol=5, framealpha=0)
+    
+    fig.tight_layout()
+    b64 = _to_b64(fig)
+    _store(dashboard_id, chart_id, b64)
+    return {"chart_id": chart_id, "title": title, "base64_png": b64}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Tool 11 — create_heatmap  (NEW)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@_thread_safe_chart
+def create_heatmap(
+    dashboard_id: str,
+    chart_id: str,
+    title: str,
+    row_labels: List[str],
+    col_labels: List[str],
+    values: List[List[float]],
+    color_scale: str = "RdYlGn",
+    annotate: bool = True,
+) -> dict:
+    """
+    Generate a heatmap.
+    
+    Args:
+        values: 2D array of floats
+        
+    Returns:
+        {chart_id, title, base64_png}
+    """
+    fig, ax = plt.subplots(figsize=(max(8, len(col_labels) * 1.0), max(5, len(row_labels) * 0.5)))
+    
+    data = np.array(values)
+    im = ax.imshow(data, cmap=color_scale, aspect='auto')
+    
+    ax.set_xticks(np.arange(len(col_labels)))
+    ax.set_yticks(np.arange(len(row_labels)))
+    ax.set_xticklabels(col_labels)
+    ax.set_yticklabels(row_labels)
+    
+    plt.setp(ax.get_xticklabels(), rotation=45, ha="right", rotation_mode="anchor")
+    
+    if annotate:
+        for i in range(len(row_labels)):
+            for j in range(len(col_labels)):
+                val = data[i, j]
+                # Choose text color based on background (heuristic for RdYlGn)
+                text_color = "white" if abs(val) > np.max(np.abs(data)) * 0.6 else "black"
+                ax.text(j, i, f"{val:.1f}", ha="center", va="center", color=text_color, fontsize=8)
+                
+    _apply_nk_style(ax, title)
+    # Restore grid for heatmap off
+    ax.grid(False)
+    
+    fig.colorbar(im, ax=ax)
+    fig.tight_layout()
+    b64 = _to_b64(fig)
+    _store(dashboard_id, chart_id, b64)
+    return {"chart_id": chart_id, "title": title, "base64_png": b64}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Tool 12 — create_treemap  (NEW)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@_thread_safe_chart
+def create_treemap(
+    dashboard_id: str,
+    chart_id: str,
+    title: str,
+    labels: List[str],
+    sizes: List[float],
+) -> dict:
+    """
+    Generate a treemap.
+    
+    Args:
+        labels: List of category labels
+        sizes: Corresponding sizes/values
+        
+    Returns:
+        {chart_id, title, base64_png}
+    """
+    try:
+        import squarify
+    except ImportError:
+        return {"chart_id": chart_id, "title": title, "base64_png": _error_chart(title, "squarify library not installed. Cannot render treemap.")}
+        
+    fig, ax = plt.subplots(figsize=(10, 6))
+    
+    colors = (NK_COLORS * ((len(sizes) // len(NK_COLORS)) + 1))[:len(sizes)]
+    
+    # Calculate percentages for labels
+    total = sum(sizes) or 1
+    pcts = [s / total * 100 for s in sizes]
+    display_labels = [f"{l}\n{s:,.1f}\n({p:.1f}%)" for l, s, p in zip(labels, sizes, pcts)]
+    
+    squarify.plot(sizes=sizes, label=display_labels, color=colors, alpha=0.8, ax=ax,
+                  text_kwargs={'fontsize': 9, 'color': 'white', 'fontweight': 'bold'})
+                  
+    ax.axis('off')
+    ax.set_title(title, fontsize=13, fontweight="bold", color="#1A1A2E", pad=10)
+    fig.patch.set_facecolor("#FAFAFA")
+    
     fig.tight_layout()
     b64 = _to_b64(fig)
     _store(dashboard_id, chart_id, b64)

@@ -1,6 +1,7 @@
 """
 Dashboard assembly tool — compile_dashboard builds the HTML and renders it to PDF.
 """
+import base64
 import os
 from datetime import datetime, timezone
 from typing import List, Optional
@@ -9,7 +10,7 @@ from jinja2 import Environment, FileSystemLoader
 
 from chatbot.db import get_conn
 from dashboard.config import DASHBOARD_STORAGE_PATH
-from dashboard.tools.charts import get_chart, purge_dashboard
+from dashboard.tools.charts import get_chart, get_all_charts, purge_dashboard
 
 
 # Jinja2 environment
@@ -57,9 +58,29 @@ def compile_dashboard(
         html_str = _render_html(title, subtitle, period_label, generated_by, resolved_sections)
         pdf_bytes, page_count = _render_pdf(html_str)
 
-        pdf_path = os.path.join(DASHBOARD_STORAGE_PATH, f"{dashboard_id}.pdf")
+        # Create a report-specific folder
+        report_dir = os.path.join(DASHBOARD_STORAGE_PATH, dashboard_id)
+        os.makedirs(report_dir, exist_ok=True)
+
+        # Save HTML
+        html_path = os.path.join(report_dir, f"{dashboard_id}.html")
+        with open(html_path, "w", encoding="utf-8") as f:
+            f.write(html_str)
+
+        # Save PDF
+        pdf_path = os.path.join(report_dir, f"{dashboard_id}.pdf")
         with open(pdf_path, "wb") as f:
             f.write(pdf_bytes)
+
+        # Save Charts
+        all_charts = get_all_charts(dashboard_id)
+        for cid, b64_str in all_charts.items():
+            # some b64 strings might have "data:image/png;base64," prefix, let's strip it if present (though _to_b64 doesn't add it)
+            if b64_str.startswith("data:image"):
+                b64_str = b64_str.split(",", 1)[1]
+            chart_path = os.path.join(report_dir, f"{cid}.png")
+            with open(chart_path, "wb") as f:
+                f.write(base64.b64decode(b64_str))
 
         _update_job(dashboard_id, user_id, "ready", pdf_path, page_count, title, None)
         purge_dashboard(dashboard_id)
