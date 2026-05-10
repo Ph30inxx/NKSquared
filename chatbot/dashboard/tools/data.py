@@ -6,7 +6,9 @@ no imports from chatbot.tools so the dashboard agent has its own tool set).
 Tools 12-20 are new tools exposing data not covered by any chatbot tool.
 """
 import json
+import re
 from datetime import date, timedelta
+from typing import List
 from dateutil.relativedelta import relativedelta
 
 from chatbot.config import FY_START_MONTH, SAFE_QUERY_ROW_LIMIT
@@ -315,7 +317,7 @@ def calculate_irr(company_name: str) -> dict:
 # Tool 5 — check_portfolio_alerts
 # ─────────────────────────────────────────────────────────────────────────────
 
-def check_portfolio_alerts() -> list:
+def check_portfolio_alerts() -> List[dict]:
     """
     Scan for portfolio health issues: MOIC < 0.95, written-off companies,
     3 consecutive months EBITDA worsening, revenue decline MoM.
@@ -424,7 +426,7 @@ def get_company_trend(
             cur.execute("""
                 SELECT DATE_TRUNC('quarter', month_date)::DATE AS period_date,
                        TO_CHAR(DATE_TRUNC('quarter', month_date),'YYYY "Q"Q') AS period_label,
-                       ROUND(SUM(revenue_lacs),2) AS revenue,
+                       ROUND(SUM(total_income_lacs),2) AS revenue,
                        ROUND(SUM(ebitda_lacs),2) AS ebitda,
                        ROUND(AVG(ebitda_pct)*100,2) AS ebitda_pct,
                        ROUND(SUM(gross_margin_lacs),2) AS gross_margin,
@@ -439,7 +441,7 @@ def get_company_trend(
             cur.execute("""
                 SELECT month_date AS period_date,
                        TO_CHAR(month_date,'Mon-YY') AS period_label,
-                       ROUND(revenue_lacs,2) AS revenue,
+                       ROUND(total_income_lacs,2) AS revenue,
                        ROUND(ebitda_lacs,2) AS ebitda,
                        ROUND(ebitda_pct*100,2) AS ebitda_pct,
                        ROUND(gross_margin_lacs,2) AS gross_margin,
@@ -455,6 +457,31 @@ def get_company_trend(
     if not rows:
         return {"error": f"No MIS data for {company_id} in {period}"}
 
+    # Fetch prior year data for YoY comparison
+    prior_s = str(date.fromisoformat(s) - relativedelta(years=1))
+    prior_e = str(date.fromisoformat(e) - relativedelta(years=1))
+    with get_conn() as conn, get_cursor(conn) as cur:
+        if granularity == "quarterly":
+            cur.execute("""
+                SELECT DATE_TRUNC('quarter', month_date)::DATE AS period_date,
+                       ROUND(SUM(total_income_lacs),2) AS yoy_revenue,
+                       ROUND(SUM(ebitda_lacs),2) AS yoy_ebitda
+                FROM mis_monthly
+                WHERE company_id=%s AND geography=%s AND month_date BETWEEN %s AND %s
+                GROUP BY DATE_TRUNC('quarter', month_date)
+            """, (company_id, geography, prior_s, prior_e))
+        else:
+            cur.execute("""
+                SELECT month_date AS period_date,
+                       ROUND(total_income_lacs,2) AS yoy_revenue,
+                       ROUND(ebitda_lacs,2) AS yoy_ebitda
+                FROM mis_monthly
+                WHERE company_id=%s AND geography=%s AND month_date BETWEEN %s AND %s
+            """, (company_id, geography, prior_s, prior_e))
+        prior_rows = cur.fetchall()
+
+    prior_map = {str(r["period_date"])[:10]: dict(r) for r in prior_rows}
+
     for i, row in enumerate(rows):
         for k, v in row.items():
             if hasattr(v, "__float__"):
@@ -464,6 +491,23 @@ def get_company_trend(
             prev_rev = rows[i - 1]["revenue"]
             if prev_rev:
                 row["mom_revenue_pct"] = round((row["revenue"] - prev_rev) / abs(prev_rev) * 100, 2)
+                
+        # Attach YoY data
+        curr_date = str(row["period_date"])[:10]
+        try:
+            prior_date = str(date.fromisoformat(curr_date) - relativedelta(years=1))
+            prior_data = prior_map.get(prior_date, {})
+            row["yoy_revenue"] = float(prior_data.get("yoy_revenue")) if prior_data.get("yoy_revenue") is not None else None
+            row["yoy_ebitda"] = float(prior_data.get("yoy_ebitda")) if prior_data.get("yoy_ebitda") is not None else None
+            
+            if row.get("revenue") is not None and row.get("yoy_revenue"):
+                row["yoy_revenue_pct"] = round((row["revenue"] - row["yoy_revenue"]) / abs(row["yoy_revenue"]) * 100, 2)
+            else:
+                row["yoy_revenue_pct"] = None
+        except ValueError:
+            row["yoy_revenue"] = None
+            row["yoy_ebitda"] = None
+            row["yoy_revenue_pct"] = None
 
     revenues = [r["revenue"] for r in rows if r.get("revenue") is not None]
     ebitdas = [r["ebitda"] for r in rows if r.get("ebitda") is not None]
@@ -611,7 +655,7 @@ def get_mis_recent_summary(company_id: str) -> dict:
 # Tool 8 — get_bu_breakdown
 # ─────────────────────────────────────────────────────────────────────────────
 
-def get_bu_breakdown(company_id: str, period: str = "latest") -> list:
+def get_bu_breakdown(company_id: str, period: str = "latest") -> List[dict]:
     """
     BU-level revenue, EBITDA, channel breakdowns.
 
@@ -668,7 +712,7 @@ def get_bu_breakdown(company_id: str, period: str = "latest") -> list:
 # Tool 9 — get_outlet_breakdown
 # ─────────────────────────────────────────────────────────────────────────────
 
-def get_outlet_breakdown(period: str = "latest") -> list:
+def get_outlet_breakdown(period: str = "latest") -> List[dict]:
     """
     Outlet-level P&L for Company_01.
 
@@ -719,6 +763,18 @@ def run_query(sql: str) -> dict:
     Only SELECT statements are allowed. Maximum 500 rows returned.
     Only queries against known tables are permitted.
 
+    SCHEMA REFERENCE:
+    - mis_monthly:
+        - company_id (str): e.g. 'company_01'
+        - month_date (date): Use this for filtering periods (not 'month' or 'period_date')
+        - geography (str): MUST filter by 'consolidated' to avoid double-counting
+        - total_income_lacs (float): Use this for Revenue (there is no 'revenue' column)
+        - ebitda_lacs (float), ebitda_pct (float)
+        - gross_margin_lacs (float), gross_margin_pct (float)
+        - total_operating_costs_lacs (float)
+    - portfolio_companies:
+        - id (str), display_name (str), sector (str), current_value_cr (float), moic (float)
+
     IMPORTANT: Queries against mis_monthly MUST include a geography filter
     (e.g. WHERE geography='consolidated') to avoid double-counting revenue/EBITDA
     across geography rows. Queries without this filter will be rejected.
@@ -743,6 +799,16 @@ def run_query(sql: str) -> dict:
                 "enforce geography='consolidated' automatically."
             )
         }
+
+    # Enforce table allowlist
+    referenced = set(re.findall(r'\bFROM\s+([A-Z0-9_]+)', sql_upper))
+    referenced |= set(re.findall(r'\bJOIN\s+([A-Z0-9_]+)', sql_upper))
+    disallowed = {t.lower() for t in referenced} - {t.lower() for t in _ALLOWED_TABLES}
+    # ignore subqueries block e.g FROM (SELECT
+    disallowed.discard("")
+    disallowed.discard("select")
+    if disallowed:
+        return {"error": f"Query references disallowed tables: {', '.join(disallowed)}"}
 
     with get_conn() as conn, get_cursor(conn) as cur:
         try:
@@ -814,7 +880,7 @@ def convert_forex(
 # Tool 12 — get_portfolio_aggregates  (NEW)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def get_portfolio_aggregates(scope: str = "TOTAL") -> list:
+def get_portfolio_aggregates(scope: str = "TOTAL") -> List[dict]:
     """
     Read the pre-computed portfolio_aggregates_mv materialized view.
     Fastest source for fund-level KPIs — always call this before get_portfolio_summary
@@ -855,7 +921,7 @@ def get_valuation_history(
     company_name: str,
     start_date: str = None,
     end_date: str = None,
-) -> list:
+) -> List[dict]:
     """
     Return the complete valuation timeline for a company (clean time series for charting).
 
@@ -899,7 +965,7 @@ def get_valuation_history(
 # Tool 14 — get_transaction_timeline  (NEW)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def get_transaction_timeline(company_name: str) -> list:
+def get_transaction_timeline(company_name: str) -> List[dict]:
     """
     Return the full deal history including investment round details.
 
@@ -946,7 +1012,7 @@ def get_transaction_timeline(company_name: str) -> list:
 # Tool 15 — get_cap_table_snapshot  (NEW)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def get_cap_table_snapshot(company_name: str) -> list:
+def get_cap_table_snapshot(company_name: str) -> List[dict]:
     """
     Aggregates transaction data by investing entity to show ownership breakdown.
 
@@ -997,7 +1063,7 @@ def get_cost_breakdown(
     company_id: str,
     period: str = "FY26",
     geography: str = "consolidated",
-) -> list:
+) -> List[dict]:
     """
     Returns all 15 granular cost line items from mis_monthly not exposed by get_company_trend.
 
@@ -1053,7 +1119,7 @@ def get_channel_breakdown(
     company_id: str,
     period: str = "FY26",
     by: str = "month",
-) -> list:
+) -> List[dict]:
     """
     Dedicated channel mix tool — returns clean channel time-series or BU-level splits.
 
@@ -1128,7 +1194,7 @@ def get_outlet_profitability(
     period: str = "latest",
     sort_by: str = "profit",
     top_n: int = 10,
-) -> list:
+) -> List[dict]:
     """
     Ranked outlet profitability view for Company_01.
 
@@ -1256,7 +1322,7 @@ def get_mis_submission_status(fiscal_year: str = "FY26") -> dict:
 # Tool 20 — get_entity_breakdown  (NEW)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def get_entity_breakdown() -> list:
+def get_entity_breakdown() -> List[dict]:
     """
     Groups portfolio companies by their fund vehicle (portfolio_type maps to
     portfolio_categories.code). Returns display_name from portfolio_categories.
@@ -1306,7 +1372,7 @@ def get_entity_breakdown() -> list:
 # Tool 21 — get_mis_anomaly_summary  (NEW)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def get_mis_anomaly_summary(company_id: str = None, fiscal_year: str = "FY26") -> list:
+def get_mis_anomaly_summary(company_id: str = None, fiscal_year: str = "FY26") -> List[dict]:
     """
     Aggregates mis_anomalies by severity and rule. Portfolio-wide if company_id is None.
 
@@ -1349,3 +1415,55 @@ def get_mis_anomaly_summary(company_id: str = None, fiscal_year: str = "FY26") -
             elif hasattr(v, "__float__"):
                 r[k] = float(v)
     return rows
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Tool 22 — compute_executive_summary  (NEW)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def compute_executive_summary(portfolio_aggs: List[dict], company_trends: List[dict]) -> dict:
+    """
+    Pre-computes a structured executive summary from data to avoid LLM hallucinations.
+    
+    Args:
+        portfolio_aggs: Result from get_portfolio_aggregates
+        company_trends: List of dicts from get_company_trend for key companies
+        
+    Returns:
+        {headline, key_wins, key_risks, recommendation}
+    """
+    # Defensive check
+    if not portfolio_aggs:
+        return {"headline": "Data unavailable", "key_wins": [], "key_risks": [], "recommendation": ""}
+        
+    total_val = sum(r.get("current_value_cr", 0) for r in portfolio_aggs)
+    
+    wins = []
+    risks = []
+    
+    for trend in company_trends:
+        comp = trend.get("company_id", "Unknown")
+        summary = trend.get("summary", {})
+        rev_growth = summary.get("revenue_growth_pct", 0)
+        ebitda_trend = summary.get("ebitda_trend", "")
+        
+        if rev_growth and rev_growth > 10:
+            wins.append(f"{comp.title()} showed strong revenue growth at {rev_growth:.1f}%.")
+        elif rev_growth and rev_growth < 0:
+            risks.append(f"{comp.title()} revenue contracted by {abs(rev_growth):.1f}%.")
+            
+        if ebitda_trend == "deteriorating":
+            risks.append(f"{comp.title()} EBITDA is deteriorating over the last 3 periods.")
+        elif ebitda_trend == "improving":
+            wins.append(f"{comp.title()} EBITDA margins are improving consistently.")
+            
+    headline = f"Portfolio valued at {total_val:,.1f} Cr. Performance is mixed across operating companies."
+    if len(wins) > len(risks):
+         headline = f"Portfolio valued at {total_val:,.1f} Cr. Overall strong operating performance."
+         
+    return {
+        "headline": headline,
+        "key_wins": wins[:3],
+        "key_risks": risks[:3],
+        "recommendation": "Review cost structures in underperforming entities and double down on high ROI channels."
+    }

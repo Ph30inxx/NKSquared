@@ -220,7 +220,11 @@ async def get_status(dashboard_id: str, user_id: int = Depends(get_current_user_
 
 
 @router.get("/{dashboard_id}/download")
-async def download_dashboard(dashboard_id: str, user_id: int = Depends(get_current_user_id)):
+async def download_dashboard(
+    dashboard_id: str, 
+    format: str = "pdf",
+    user_id: int = Depends(get_current_user_id)
+):
     """Download the generated PDF for a dashboard job."""
     job = _get_job(dashboard_id, user_id)
     if not job:
@@ -235,8 +239,21 @@ async def download_dashboard(dashboard_id: str, user_id: int = Depends(get_curre
         raise HTTPException(status_code=404, detail="PDF file missing from storage")
 
     safe_title = (job.get("title") or "dashboard").replace(" ", "_").replace("/", "-")[:60]
-    filename = f"{safe_title}.pdf"
+    
+    if format.lower() == "html":
+        # Derive HTML path from PDF path (they are in the same folder)
+        html_path = job["pdf_path"].replace(".pdf", ".html")
+        if not os.path.exists(html_path):
+            raise HTTPException(status_code=404, detail="HTML file missing from storage")
+            
+        filename = f"{safe_title}.html"
+        return FileResponse(
+            path=html_path,
+            media_type="text/html",
+            filename=filename,
+        )
 
+    filename = f"{safe_title}.pdf"
     return FileResponse(
         path=job["pdf_path"],
         media_type="application/pdf",

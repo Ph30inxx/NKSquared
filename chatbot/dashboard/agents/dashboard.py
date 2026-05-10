@@ -33,6 +33,7 @@ from dashboard.tools.data import (
     get_mis_anomaly_summary,
     run_query,
     convert_forex,
+    compute_executive_summary,
 )
 from dashboard.tools.charts import (
     create_bar_chart,
@@ -44,6 +45,9 @@ from dashboard.tools.charts import (
     create_combo_chart,
     create_scatter_chart,
     create_stacked_area_chart,
+    create_bullet_chart,
+    create_heatmap,
+    create_treemap,
 )
 from dashboard.tools.assembly import compile_dashboard
 
@@ -121,7 +125,8 @@ def create_dashboard_agent(dashboard_id: str, user_id: int) -> Agent:
             get_mis_anomaly_summary,
             run_query,
             convert_forex,
-            # Chart tools (9)
+            compute_executive_summary,
+            # Chart tools (12)
             create_bar_chart,
             create_line_chart,
             create_pie_chart,
@@ -131,6 +136,9 @@ def create_dashboard_agent(dashboard_id: str, user_id: int) -> Agent:
             create_combo_chart,
             create_scatter_chart,
             create_stacked_area_chart,
+            create_bullet_chart,
+            create_heatmap,
+            create_treemap,
             # Assembly (closure — baked with dashboard_id + user_id)
             _compile_dashboard,
         ],
