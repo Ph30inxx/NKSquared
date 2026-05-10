@@ -35,10 +35,11 @@ export function useChatSession() {
   const [error, setError] = useState<string | null>(null);
   const [loadingConvs, setLoadingConvs] = useState(true);
 
-  // Stable ref so delete handler always sees latest conversations without
-  // recreating other callbacks that depend on it.
+  // Stable refs so callbacks always see latest state without stale closures.
   const convsRef = useRef<Conversation[]>([]);
   convsRef.current = conversations;
+  const activeConvIdRef = useRef<string | null>(null);
+  activeConvIdRef.current = activeConvId;
 
   // Cache loaded histories so switching conversations is instant
   const historyCache = useRef<Map<string, ChatMessage[]>>(new Map());
@@ -78,6 +79,19 @@ export function useChatSession() {
   }, []);
 
   const newChat = useCallback(async () => {
+    // ChatGPT-style: if already on an empty conversation, do nothing
+    const activeIsEmpty = convsRef.current.some(
+      (c) => c.id === activeConvIdRef.current && c.title === "New Conversation",
+    );
+    if (activeIsEmpty) return;
+
+    // Reuse any existing empty conversation instead of creating a duplicate
+    const existingEmpty = convsRef.current.find((c) => c.title === "New Conversation");
+    if (existingEmpty) {
+      selectConversation(existingEmpty);
+      return;
+    }
+
     try {
       const conv = await createConversation();
       const newConv: Conversation = {
@@ -97,7 +111,7 @@ export function useChatSession() {
       setMessages([]);
       setError(null);
     }
-  }, []);
+  }, [selectConversation]);
 
   // Load conversation list once on mount
   const initialized = useRef(false);
