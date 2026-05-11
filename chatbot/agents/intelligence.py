@@ -134,6 +134,7 @@ def _make_model() -> AzureOpenAI:
 def create_intelligence_agent(
     session_id: str = None,
     include_write_tools: bool = False,
+    voice_mode: bool = False,
 ) -> Agent:
     """
     Create the unified NKSquared Intelligence agent.
@@ -158,7 +159,10 @@ def create_intelligence_agent(
         model=_make_model(),
         tools=tools,
 
-        instructions=[get_intelligence_prompt(include_write_rules=include_write_tools)],
+        instructions=[get_intelligence_prompt(
+            include_write_rules=include_write_tools,
+            voice_mode=voice_mode,
+        )],
 
         db=_DB,
         session_id=session_id,
@@ -166,6 +170,6 @@ def create_intelligence_agent(
         num_history_runs=AGENT_NUM_HISTORY_RUNS,
         add_datetime_to_context=True,
 
-        markdown=True,
+        markdown=not voice_mode,
         stream=True,
     )
