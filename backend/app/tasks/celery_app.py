@@ -18,8 +18,8 @@ celery_app.conf.update(
     beat_schedule={
         "fetch_daily_fx_rates": {
             "task": "app.tasks.fx_loader.fetch_daily_rates",
-            # 06:00 UTC = ~11:30 IST, after RBI publishes the prior day's rates.
-            "schedule": crontab(hour=6, minute=0),
+            # Intraday refresh; row is per-day so each call overwrites today's quote.
+            "schedule": crontab(minute=0, hour=f"*/{settings.FX_REFRESH_HOURS}"),
         },
         "check_pending_mis": {
             "task": "app.tasks.reminders.check_pending_mis",

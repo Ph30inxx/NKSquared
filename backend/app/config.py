@@ -25,5 +25,14 @@ class Settings(BaseSettings):
     PUBLIC_UPLOAD_BASE_URL: str = "http://localhost:5173"
     REMINDER_TOKEN_TTL_DAYS: int = 30
 
+    # Live FX rate fetcher. Provider is currencylayer (free tier locks source=USD,
+    # so XXX→INR is triangulated as (USD→INR) / (USD→XXX)). Fixer can be swapped
+    # in by setting FX_BASE_CURRENCY=EUR.
+    FX_PROVIDER: str = "currencylayer"
+    FX_API_KEY: str | None = None
+    FX_BASE_CURRENCY: str = "USD"
+    FX_REFRESH_HOURS: int = 2
+    FX_HTTP_TIMEOUT_SEC: int = 15
+
 
 settings = Settings()
