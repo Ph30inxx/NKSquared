@@ -12,6 +12,8 @@ import ListItem from "@mui/material/ListItem";
 import ListItemButton from "@mui/material/ListItemButton";
 import ListItemIcon from "@mui/material/ListItemIcon";
 import ListItemText from "@mui/material/ListItemText";
+import Menu from "@mui/material/Menu";
+import MenuItem from "@mui/material/MenuItem";
 import Paper from "@mui/material/Paper";
 import TextField from "@mui/material/TextField";
 import Tooltip from "@mui/material/Tooltip";
@@ -19,6 +21,9 @@ import Typography from "@mui/material/Typography";
 import AddIcon from "@mui/icons-material/Add";
 import ChatBubbleOutlineIcon from "@mui/icons-material/ChatBubbleOutline";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
+import MoreHorizIcon from "@mui/icons-material/MoreHoriz";
+import PushPinIcon from "@mui/icons-material/PushPin";
+import PushPinOutlinedIcon from "@mui/icons-material/PushPinOutlined";
 import SendIcon from "@mui/icons-material/Send";
 import MicIcon from "@mui/icons-material/Mic";
 import MicOffIcon from "@mui/icons-material/MicOff";
@@ -32,7 +37,6 @@ import NotificationsActiveIcon from "@mui/icons-material/NotificationsActive";
 import HistoryIcon from "@mui/icons-material/History";
 import GraphicEqIcon from "@mui/icons-material/GraphicEq";
 import LogoutIcon from "@mui/icons-material/Logout";
-import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 
 import { useChatSession } from "./useChatSession";
 import { useVoiceCall } from "./useVoiceCall";
@@ -82,6 +86,7 @@ const APP_NAV = [
 export default function ChatPage() {
   const [input, setInput] = useState("");
   const [hoveredConvId, setHoveredConvId] = useState<string | null>(null);
+  const [menuAnchor, setMenuAnchor] = useState<{ el: HTMLElement; convId: string } | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
   const logout = useAuthStore((s) => s.logout);
@@ -100,6 +105,8 @@ export default function ChatPage() {
     removeConversation,
     sessionId,
     appendMessage,
+    pinnedIds,
+    togglePin,
   } = useChatSession();
 
   const {
@@ -148,7 +155,94 @@ export default function ChatPage() {
   const voiceBusy   = voiceState === "connecting" || voiceState === "thinking" || voiceState === "executing";
   const voiceLive   = voiceState === "active" || voiceState === "ending";
 
-  const groups = groupByDate(conversations);
+  const pinnedConvs = conversations.filter((c) => pinnedIds.has(c.id));
+  const unpinnedConvs = conversations.filter((c) => !pinnedIds.has(c.id));
+  const groups = groupByDate(unpinnedConvs);
+
+  const renderConvItem = (conv: Conversation) => {
+    const isHovered = hoveredConvId === conv.id;
+    const isPinned = pinnedIds.has(conv.id);
+    const isActive = conv.id === activeConvId;
+    const isMenuOpen = menuAnchor?.convId === conv.id;
+
+    return (
+      <ListItem
+        key={conv.id}
+        disablePadding
+        onMouseEnter={() => setHoveredConvId(conv.id)}
+        onMouseLeave={() => setHoveredConvId(null)}
+        sx={{ position: "relative" }}
+      >
+        <ListItemButton
+          selected={isActive}
+          onClick={() => selectConversation(conv)}
+          sx={{
+            borderRadius: 1.5,
+            mx: 0.75,
+            py: 0.75,
+            pr: isHovered || isMenuOpen ? 4.5 : isPinned ? 3 : 1.5,
+            "&.Mui-selected": {
+              bgcolor: "action.selected",
+              "&:hover": { bgcolor: "action.selected" },
+            },
+          }}
+        >
+          <ListItemText
+            primary={conv.title}
+            primaryTypographyProps={{
+              noWrap: true,
+              variant: "body2",
+              fontWeight: isActive ? 600 : 400,
+            }}
+          />
+        </ListItemButton>
+
+        {/* Pin badge — always visible when pinned and not hovered */}
+        {isPinned && !isHovered && !isMenuOpen && (
+          <Box
+            sx={{
+              position: "absolute",
+              right: 14,
+              top: "50%",
+              transform: "translateY(-50%)",
+              pointerEvents: "none",
+            }}
+          >
+            <PushPinIcon sx={{ fontSize: 12, color: "primary.main", opacity: 0.65 }} />
+          </Box>
+        )}
+
+        {/* ⋯ button — visible on hover or when menu is open */}
+        {(isHovered || isMenuOpen) && (
+          <Box
+            sx={{
+              position: "absolute",
+              right: 6,
+              top: "50%",
+              transform: "translateY(-50%)",
+            }}
+          >
+            <IconButton
+              size="small"
+              onClick={(e) => {
+                e.stopPropagation();
+                setMenuAnchor({ el: e.currentTarget, convId: conv.id });
+              }}
+              sx={{
+                width: 26,
+                height: 26,
+                color: "text.secondary",
+                bgcolor: isMenuOpen ? "action.selected" : "transparent",
+                "&:hover": { bgcolor: "action.hover", color: "text.primary" },
+              }}
+            >
+              <MoreHorizIcon sx={{ fontSize: 16 }} />
+            </IconButton>
+          </Box>
+        )}
+      </ListItem>
+    );
+  };
 
   return (
     <Box sx={{ display: "flex", height: "100vh", overflow: "hidden", bgcolor: "background.default" }}>
@@ -165,8 +259,19 @@ export default function ChatPage() {
           bgcolor: "background.paper",
         }}
       >
-        {/* App name */}
-        <Box sx={{ px: 2.5, py: 2, display: "flex", alignItems: "center", gap: 1 }}>
+        {/* Brand */}
+        <Box sx={{ px: 2, py: 1.5, display: "flex", alignItems: "center", gap: 1 }}>
+          <Box
+            sx={{
+              width: 28, height: 28, borderRadius: 1.5, flexShrink: 0,
+              background: "linear-gradient(135deg, #4F75E8 0%, #1B4FD8 100%)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+            }}
+          >
+            <Typography sx={{ color: "#fff", fontWeight: 800, fontSize: "0.75rem", lineHeight: 1 }}>
+              NK
+            </Typography>
+          </Box>
           <Typography variant="h6" fontWeight={700} sx={{ letterSpacing: -0.3 }}>
             NKSquared
           </Typography>
@@ -230,93 +335,115 @@ export default function ChatPage() {
             </Box>
           ) : (
             <>
-              <Typography
-                variant="caption"
-                sx={{
-                  px: 2, pt: 1.5, pb: 0.5,
-                  display: "block",
-                  color: "text.disabled",
-                  fontWeight: 700,
-                  textTransform: "uppercase",
-                  letterSpacing: 0.6,
-                  fontSize: "0.65rem",
-                }}
-              >
-                Recent
-              </Typography>
-              {groups.map((group) => (
-                <Box key={group.label}>
+              {/* Pinned section */}
+              {pinnedConvs.length > 0 && (
+                <>
                   <Typography
                     variant="caption"
                     sx={{
-                      px: 2, pt: 1, pb: 0.5,
-                      display: "block",
+                      px: 2, pt: 1.5, pb: 0.5,
+                      display: "flex", alignItems: "center", gap: 0.5,
                       color: "text.disabled",
-                      fontSize: "0.6rem",
-                      letterSpacing: 0.4,
+                      fontWeight: 700,
+                      textTransform: "uppercase",
+                      letterSpacing: 0.6,
+                      fontSize: "0.65rem",
                     }}
                   >
-                    {group.label}
+                    <PushPinIcon sx={{ fontSize: 11 }} /> Pinned
                   </Typography>
                   <List dense disablePadding>
-                    {group.items.map((conv) => (
-                      <ListItem
-                        key={conv.id}
-                        disablePadding
-                        secondaryAction={
-                          hoveredConvId === conv.id ? (
-                            <Tooltip title="Delete">
-                              <IconButton
-                                size="small"
-                                edge="end"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  removeConversation(conv.id);
-                                }}
-                                sx={{
-                                  color: "text.secondary",
-                                  mr: 0.5,
-                                  "&:hover": { color: "error.main" },
-                                }}
-                              >
-                                <DeleteOutlineIcon fontSize="small" />
-                              </IconButton>
-                            </Tooltip>
-                          ) : null
-                        }
-                        onMouseEnter={() => setHoveredConvId(conv.id)}
-                        onMouseLeave={() => setHoveredConvId(null)}
-                      >
-                        <ListItemButton
-                          selected={conv.id === activeConvId}
-                          onClick={() => selectConversation(conv)}
-                          sx={{
-                            borderRadius: 1,
-                            mx: 0.5,
-                            pr: hoveredConvId === conv.id ? 5 : 1,
-                            "&.Mui-selected": {
-                              bgcolor: "action.selected",
-                              "&:hover": { bgcolor: "action.selected" },
-                            },
-                          }}
-                        >
-                          <ListItemText
-                            primary={conv.title}
-                            primaryTypographyProps={{
-                              noWrap: true,
-                              variant: "body2",
-                              fontWeight: conv.id === activeConvId ? 600 : 400,
-                            }}
-                          />
-                        </ListItemButton>
-                      </ListItem>
-                    ))}
+                    {pinnedConvs.map(renderConvItem)}
                   </List>
-                </Box>
-              ))}
+                  <Divider sx={{ my: 1 }} />
+                </>
+              )}
+
+              {/* Recent (unpinned) section */}
+              {unpinnedConvs.length > 0 && (
+                <>
+                  <Typography
+                    variant="caption"
+                    sx={{
+                      px: 2, pt: pinnedConvs.length > 0 ? 0.5 : 1.5, pb: 0.5,
+                      display: "block",
+                      color: "text.disabled",
+                      fontWeight: 700,
+                      textTransform: "uppercase",
+                      letterSpacing: 0.6,
+                      fontSize: "0.65rem",
+                    }}
+                  >
+                    Recent
+                  </Typography>
+                  {groups.map((group) => (
+                    <Box key={group.label}>
+                      <Typography
+                        variant="caption"
+                        sx={{
+                          px: 2, pt: 1, pb: 0.5,
+                          display: "block",
+                          color: "text.disabled",
+                          fontSize: "0.6rem",
+                          letterSpacing: 0.4,
+                        }}
+                      >
+                        {group.label}
+                      </Typography>
+                      <List dense disablePadding>
+                        {group.items.map(renderConvItem)}
+                      </List>
+                    </Box>
+                  ))}
+                </>
+              )}
             </>
           )}
         </Box>
+
+        {/* Conversation context menu */}
+        <Menu
+          anchorEl={menuAnchor?.el}
+          open={Boolean(menuAnchor)}
+          onClose={() => setMenuAnchor(null)}
+          onClick={() => setMenuAnchor(null)}
+          transformOrigin={{ horizontal: "right", vertical: "top" }}
+          anchorOrigin={{ horizontal: "right", vertical: "bottom" }}
+          slotProps={{
+            paper: {
+              elevation: 3,
+              sx: { minWidth: 160, borderRadius: 2, border: "1px solid", borderColor: "divider" },
+            },
+          }}
+        >
+          <MenuItem
+            onClick={() => {
+              if (menuAnchor) togglePin(menuAnchor.convId);
+            }}
+            sx={{ gap: 1.5, py: 1 }}
+          >
+            {menuAnchor && pinnedIds.has(menuAnchor.convId) ? (
+              <>
+                <PushPinIcon sx={{ fontSize: 16, color: "primary.main" }} />
+                <Typography variant="body2">Unpin</Typography>
+              </>
+            ) : (
+              <>
+                <PushPinOutlinedIcon sx={{ fontSize: 16, color: "text.secondary" }} />
+                <Typography variant="body2">Pin</Typography>
+              </>
+            )}
+          </MenuItem>
+          <MenuItem
+            onClick={() => {
+              if (menuAnchor) removeConversation(menuAnchor.convId);
+            }}
+            sx={{ gap: 1.5, py: 1, color: "error.main" }}
+          >
+            <DeleteOutlineIcon sx={{ fontSize: 16 }} />
+            <Typography variant="body2" color="error.main">Delete</Typography>
+          </MenuItem>
+        </Menu>
 
         <Divider />
 
@@ -417,9 +544,9 @@ export default function ChatPage() {
             sx={{
               px: 3, py: 1.5,
               display: "flex", alignItems: "center", gap: 1.5,
-              bgcolor: "primary.50",
+              bgcolor: (t) => `${t.palette.primary.main}12`,
               borderBottom: "1px solid",
-              borderColor: "primary.100",
+              borderColor: (t) => `${t.palette.primary.main}28`,
               fontSize: 13,
               color: "primary.main",
             }}

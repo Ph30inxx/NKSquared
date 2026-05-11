@@ -74,9 +74,14 @@ export default function AuditLogPage() {
 
   return (
     <Stack spacing={3}>
-      <Typography variant="h4" component="h1">
-        Audit Log
-      </Typography>
+      <Box>
+        <Typography variant="h4" component="h1">
+          Audit Log
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
+          Complete trail of all system actions and data changes.
+        </Typography>
+      </Box>
 
       <Paper sx={{ p: 2 }}>
         <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
@@ -161,9 +166,15 @@ export default function AuditLogPage() {
                 <TableBody>
                   {data?.items.map((row) => (
                     <TableRow key={row.id} hover>
-                      <TableCell>{fmtTs(row.occurred_at)}</TableCell>
                       <TableCell>
-                        {row.user_email ?? (row.user_id != null ? `#${row.user_id}` : "—")}
+                        <Typography variant="caption" sx={{ whiteSpace: "nowrap" }}>
+                          {fmtTs(row.occurred_at)}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="caption">
+                          {row.user_email ?? (row.user_id != null ? `#${row.user_id}` : "—")}
+                        </Typography>
                       </TableCell>
                       <TableCell>
                         <Chip
@@ -173,24 +184,41 @@ export default function AuditLogPage() {
                         />
                       </TableCell>
                       <TableCell>
-                        <code>
+                        <Box
+                          component="code"
+                          sx={{
+                            fontSize: "0.75rem",
+                            bgcolor: "action.hover",
+                            px: 0.75,
+                            py: 0.25,
+                            borderRadius: 1,
+                          }}
+                        >
                           {row.entity_type}#{row.entity_id}
-                        </code>
+                        </Box>
                       </TableCell>
-                      <TableCell>{row.field_name ?? "—"}</TableCell>
+                      <TableCell>
+                        <Typography variant="caption" color="text.secondary">
+                          {row.field_name ?? "—"}
+                        </Typography>
+                      </TableCell>
                       <TableCell>
                         <Tooltip
-                          title={`OLD: ${row.old_value ?? "∅"}\nNEW: ${row.new_value ?? "∅"}`}
+                          title={`OLD: ${row.old_value ?? "∅"} → NEW: ${row.new_value ?? "∅"}`}
                         >
-                          <Box>
+                          <Box sx={{ fontSize: "0.8125rem" }}>
                             <Box
                               component="span"
-                              sx={{ color: "text.secondary", textDecoration: "line-through" }}
+                              sx={{ color: "text.disabled", textDecoration: "line-through" }}
                             >
                               {truncate(row.old_value)}
                             </Box>
-                            {row.old_value && row.new_value && " → "}
-                            <Box component="span">{truncate(row.new_value)}</Box>
+                            {row.old_value && row.new_value && (
+                              <Box component="span" sx={{ color: "text.disabled", mx: 0.5 }}>→</Box>
+                            )}
+                            <Box component="span" sx={{ color: "text.primary" }}>
+                              {truncate(row.new_value)}
+                            </Box>
                           </Box>
                         </Tooltip>
                       </TableCell>

@@ -2,13 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
-import Chip from "@mui/material/Chip";
 import CircularProgress from "@mui/material/CircularProgress";
 import Divider from "@mui/material/Divider";
 import IconButton from "@mui/material/IconButton";
 import List from "@mui/material/List";
 import ListItem from "@mui/material/ListItem";
-import ListItemText from "@mui/material/ListItemText";
 import Paper from "@mui/material/Paper";
 import TextField from "@mui/material/TextField";
 import Tooltip from "@mui/material/Tooltip";
@@ -88,6 +86,7 @@ export default function AIDashboardPage() {
   const [loadingHistory, setLoadingHistory] = useState(true);
   const [generationSecs, setGenerationSecs] = useState(0);
   const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null);
+  const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const logEndRef = useRef<HTMLDivElement>(null);
 
@@ -133,6 +132,7 @@ export default function AIDashboardPage() {
     setReadyInfo(null);
     setErrorMsg(null);
     setPdfPreviewUrl(null);
+    setActiveJobId(null);
 
     try {
       const res = await startGeneration(q);
@@ -146,6 +146,8 @@ export default function AIDashboardPage() {
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
+
+      let streamCompleted = false;
 
       while (true) {
         const { done, value } = await reader.read();
@@ -163,7 +165,9 @@ export default function AIDashboardPage() {
             continue;
           }
 
-          if (event.type === "tool_call" && event.tool) {
+          if (event.type === "started" && event.dashboard_id) {
+            setActiveJobId(event.dashboard_id);
+          } else if (event.type === "tool_call" && event.tool) {
             const label = TOOL_LABELS[event.tool] ?? event.tool;
             setProgressLog((prev) => {
               const existing = prev.findIndex((p) => p.tool === event.tool && p.status === "running");
@@ -178,6 +182,8 @@ export default function AIDashboardPage() {
               return [...prev, { tool: event.tool!, status: event.status ?? "done", label }];
             });
           } else if (event.type === "complete") {
+            streamCompleted = true;
+            setActiveJobId(null);
             setReadyInfo(event);
             setState("ready");
             loadHistory();
@@ -185,18 +191,20 @@ export default function AIDashboardPage() {
               getPreviewUrl(event.dashboard_id).then(url => setPdfPreviewUrl(url)).catch(() => {});
             }
           } else if (event.type === "error") {
+            streamCompleted = true;
+            setActiveJobId(null);
             setErrorMsg(event.message ?? "Generation failed");
             setState("error");
           }
         }
       }
 
-      // If stream ended without complete/error, check final state
-      if (state === "generating") {
+      if (!streamCompleted) {
         setState("error");
         setErrorMsg("Stream ended unexpectedly");
       }
     } catch (err: unknown) {
+      setActiveJobId(null);
       setErrorMsg(err instanceof Error ? err.message : "Unknown error");
       setState("error");
     }
@@ -215,43 +223,51 @@ export default function AIDashboardPage() {
       {/* ── Left panel ─────────────────────────────────────────────────────── */}
       <Box
         sx={{
-          width: 380,
+          width: 360,
           flexShrink: 0,
           display: "flex",
           flexDirection: "column",
           borderRight: "1px solid",
           borderColor: "divider",
+          bgcolor: "background.paper",
           overflow: "hidden",
         }}
       >
         {/* Header */}
-        <Box sx={{ px: 3, py: 2.5, borderBottom: "1px solid", borderColor: "divider" }}>
+        <Box sx={{ px: 3, pt: 2.5, pb: 2 }}>
           <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 0.5 }}>
-            <AutoAwesomeIcon sx={{ color: "primary.main", fontSize: 20 }} />
-            <Typography variant="h6" fontWeight={700}>
+            <AutoAwesomeIcon sx={{ color: "primary.main", fontSize: 18 }} />
+            <Typography variant="subtitle1" fontWeight={700}>
               AI Dashboard
             </Typography>
           </Box>
-          <Typography variant="body2" color="text.secondary">
+          <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.5 }}>
             Describe the report you want — the AI will fetch data, generate charts, and compile a PDF.
           </Typography>
         </Box>
 
-        {/* Query input */}
-        <Box sx={{ px: 3, pt: 2.5, pb: 2 }}>
+        <Divider />
+
+        {/* Query input + button */}
+        <Box sx={{ px: 2.5, pt: 2, pb: 1.5 }}>
           <TextField
             fullWidth
             multiline
             rows={4}
-            placeholder="e.g. Give me a full portfolio overview for FY26 with sector breakdown, Company_02 BU trends, and outlet profitability…"
+            placeholder="e.g. Portfolio overview for FY26 with sector MOIC breakdown and Company_02 BU trends…"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={handleKeyDown}
             disabled={state === "generating"}
             variant="outlined"
+            size="medium"
             sx={{
               mb: 1.5,
-              "& .MuiOutlinedInput-root": { borderRadius: 2 },
+              "& .MuiOutlinedInput-root": {
+                fontSize: "0.875rem",
+                borderRadius: 1.5,
+                bgcolor: "background.default",
+              },
             }}
           />
 
@@ -259,40 +275,53 @@ export default function AIDashboardPage() {
             fullWidth
             variant="contained"
             size="large"
-            startIcon={state === "generating" ? <CircularProgress size={18} color="inherit" /> : <SendIcon />}
+            startIcon={
+              state === "generating"
+                ? <CircularProgress size={16} color="inherit" />
+                : <SendIcon sx={{ fontSize: "1rem !important" }} />
+            }
             onClick={handleGenerate}
             disabled={!query.trim() || state === "generating"}
-            sx={{ borderRadius: 2, textTransform: "none", fontWeight: 600, py: 1.2 }}
+            sx={{ borderRadius: 1.5, py: 1.1, fontSize: "0.9375rem" }}
           >
             {state === "generating" ? `Generating… ${generationSecs}s` : "Generate Dashboard"}
           </Button>
         </Box>
 
+        <Divider />
+
         {/* Example prompts */}
-        <Box sx={{ px: 3, pb: 2 }}>
-          <Typography variant="caption" color="text.disabled" fontWeight={700}
-            sx={{ textTransform: "uppercase", letterSpacing: 0.5, display: "block", mb: 1 }}>
+        <Box sx={{ px: 2.5, py: 2 }}>
+          <Typography
+            variant="caption"
+            sx={{ fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: "text.disabled", display: "block", mb: 1.25 }}
+          >
             Example requests
           </Typography>
-          <Box sx={{ display: "flex", flexDirection: "column", gap: 0.75 }}>
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
             {EXAMPLE_PROMPTS.map((p) => (
-              <Chip
+              <Box
                 key={p}
-                label={p}
-                size="small"
-                variant="outlined"
-                clickable
-                onClick={() => setQuery(p)}
-                disabled={state === "generating"}
+                onClick={() => { if (state !== "generating") setQuery(p); }}
                 sx={{
-                  height: "auto",
-                  py: 0.5,
-                  "& .MuiChip-label": { whiteSpace: "normal", fontSize: "0.72rem" },
+                  px: 1.5,
+                  py: 1,
                   borderRadius: 1.5,
-                  justifyContent: "flex-start",
-                  textAlign: "left",
+                  border: "1px solid",
+                  borderColor: "divider",
+                  cursor: state === "generating" ? "not-allowed" : "pointer",
+                  opacity: state === "generating" ? 0.5 : 1,
+                  transition: "all 0.15s",
+                  "&:hover": state !== "generating" ? {
+                    borderColor: "primary.main",
+                    bgcolor: (t) => `${t.palette.primary.main}08`,
+                  } : {},
                 }}
-              />
+              >
+                <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem", lineHeight: 1.4 }}>
+                  {p}
+                </Typography>
+              </Box>
             ))}
           </Box>
         </Box>
@@ -300,62 +329,89 @@ export default function AIDashboardPage() {
         <Divider />
 
         {/* History */}
-        <Box sx={{ flex: 1, overflowY: "auto", px: 2, pt: 1.5 }}>
-          <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mb: 1, px: 1 }}>
-            <Typography variant="caption" color="text.disabled" fontWeight={700}
-              sx={{ textTransform: "uppercase", letterSpacing: 0.5 }}>
+        <Box sx={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", minHeight: 0 }}>
+          <Box sx={{ px: 2.5, pt: 1.75, pb: 1, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <Typography
+              variant="caption"
+              sx={{ fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: "text.disabled" }}
+            >
               History
             </Typography>
-            <Tooltip title="Refresh">
-              <IconButton size="small" onClick={loadHistory} disabled={loadingHistory}>
-                <SyncIcon fontSize="small" />
+            <Tooltip title="Refresh history">
+              <IconButton size="small" onClick={loadHistory} disabled={loadingHistory} sx={{ mr: -0.5 }}>
+                <SyncIcon sx={{ fontSize: 15 }} />
               </IconButton>
             </Tooltip>
           </Box>
 
           {loadingHistory ? (
-            <Box sx={{ display: "flex", justifyContent: "center", pt: 2 }}>
-              <CircularProgress size={20} />
+            <Box sx={{ display: "flex", justifyContent: "center", py: 3 }}>
+              <CircularProgress size={22} />
             </Box>
           ) : history.length === 0 ? (
-            <Typography variant="body2" color="text.secondary" sx={{ px: 1, pt: 1 }}>
-              No dashboards generated yet.
-            </Typography>
+            <Box sx={{ px: 2.5, pb: 2 }}>
+              <Typography variant="body2" color="text.disabled" sx={{ fontStyle: "italic" }}>
+                No dashboards generated yet.
+              </Typography>
+            </Box>
           ) : (
-            <List dense disablePadding>
+            <List dense disablePadding sx={{ px: 1, pb: 2 }}>
               {history.map((job) => (
                 <ListItem
                   key={job.dashboard_id}
                   disablePadding
-                  sx={{
-                    px: 1, py: 0.5, borderRadius: 1.5, mb: 0.5,
-                    "&:hover": { bgcolor: "action.hover" },
-                  }}
-                  secondaryAction={
-                    job.status === "ready" ? (
+                  sx={{ mb: 0.25 }}
+                >
+                  <Box
+                    sx={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 1.5,
+                      width: "100%",
+                      px: 1.5,
+                      py: 1,
+                      borderRadius: 1.5,
+                      "&:hover": { bgcolor: "action.hover" },
+                    }}
+                  >
+                    {/* Status icon */}
+                    <Box sx={{ flexShrink: 0 }}>
+                      {job.status === "ready" ? (
+                        <CheckCircleIcon sx={{ fontSize: 16, color: "success.main" }} />
+                      ) : job.status === "failed" ? (
+                        <ErrorOutlineIcon sx={{ fontSize: 16, color: "error.main" }} />
+                      ) : job.dashboard_id === activeJobId ? (
+                        <CircularProgress size={14} />
+                      ) : (
+                        // "pending" or "generating" but not the active job — stale/interrupted
+                        <HourglassEmptyIcon sx={{ fontSize: 16, color: "text.disabled" }} />
+                      )}
+                    </Box>
+
+                    {/* Text */}
+                    <Box sx={{ flex: 1, minWidth: 0 }}>
+                      <Typography variant="body2" fontWeight={500} noWrap>
+                        {job.title || "Untitled Dashboard"}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {job.created_at ? new Date(job.created_at).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : ""}
+                        {job.page_count ? ` · ${job.page_count}pp` : ""}
+                      </Typography>
+                    </Box>
+
+                    {/* Download */}
+                    {job.status === "ready" && (
                       <Tooltip title="Download PDF">
                         <IconButton
                           size="small"
                           onClick={() => directDownload(job.dashboard_id, job.title)}
+                          sx={{ flexShrink: 0, color: "text.disabled", "&:hover": { color: "primary.main" } }}
                         >
-                          <DownloadIcon fontSize="small" />
+                          <DownloadIcon sx={{ fontSize: 15 }} />
                         </IconButton>
                       </Tooltip>
-                    ) : job.status === "generating" ? (
-                      <CircularProgress size={16} />
-                    ) : null
-                  }
-                >
-                  <ListItemText
-                    primary={job.title || "Untitled Dashboard"}
-                    secondary={
-                      (job.created_at ? new Date(job.created_at).toLocaleDateString() : "") +
-                      (job.page_count ? ` · ${job.page_count} pages` : "") +
-                      (job.status === "failed" ? " · Failed" : "")
-                    }
-                    primaryTypographyProps={{ variant: "body2", noWrap: true, fontWeight: 500 }}
-                    secondaryTypographyProps={{ variant: "caption" }}
-                  />
+                    )}
+                  </Box>
                 </ListItem>
               ))}
             </List>
@@ -446,7 +502,7 @@ export default function AIDashboardPage() {
                 p: 3,
                 borderRadius: 2,
                 borderColor: "success.main",
-                bgcolor: "success.50",
+                bgcolor: (t) => `${t.palette.success.main}0D`,
               }}
             >
               <Box sx={{ display: "flex", alignItems: "flex-start", gap: 2 }}>

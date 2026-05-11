@@ -70,7 +70,7 @@ function nullify(payload: CompanyWritePayload): CompanyWritePayload {
   for (const [k, v] of Object.entries(out)) {
     if (v === "") out[k] = null;
   }
-  return out as CompanyWritePayload;
+  return out as unknown as CompanyWritePayload;
 }
 
 export default function CompanyFormDialog({
