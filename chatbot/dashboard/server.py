@@ -124,6 +124,18 @@ async def generate_dashboard(
                     })
 
             except Exception as exc:
+                # Mark the job as failed so it doesn't stay as 'generating' forever
+                try:
+                    with get_conn() as conn:
+                        with conn.cursor() as cur:
+                            cur.execute("""
+                                UPDATE dashboard_jobs
+                                SET status='failed', error_msg=%s, completed_at=NOW()
+                                WHERE id=%s
+                            """, (str(exc)[:500], dashboard_id))
+                        conn.commit()
+                except Exception:
+                    pass  # don't mask the original error
                 loop.call_soon_threadsafe(event_queue.put_nowait, {
                     "type": "error",
                     "message": str(exc),
@@ -178,7 +190,7 @@ async def get_dashboard_history(user_id: int = Depends(get_current_user_id)):
             cur.execute("""
                 SELECT id, title, status, page_count, created_at, completed_at
                 FROM dashboard_jobs
-                WHERE user_id=%s
+                WHERE user_id=%s AND status = 'ready'
                 ORDER BY created_at DESC
                 LIMIT 50
             """, (user_id,))

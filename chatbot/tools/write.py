@@ -25,10 +25,17 @@ from datetime import datetime
 import httpx
 
 from chatbot.config import BACKEND_API_URL
-from chatbot.context import get_auth_token
+from chatbot.context import get_auth_token, is_voice_mode
 from chatbot.db import get_conn, get_cursor
 
 logger = logging.getLogger("nk.chatbot.write")
+
+
+def _voice_dry_run(dry_run: bool) -> bool:
+    """In voice mode, always execute (skip preview) since Vapi already confirmed."""
+    if is_voice_mode():
+        return False
+    return dry_run
 
 # ── Shared helpers ────────────────────────────────────────────────────────────
 
@@ -80,8 +87,7 @@ def log_transaction(
     """
     Log a portfolio transaction for a company.
 
-    ALWAYS call with dry_run=True first to preview. Only call dry_run=False
-    after the user explicitly confirms.
+    Use dry_run=True to preview the changes, then dry_run=False to execute.
 
     Args:
         company_name: Display name or partial name (case-insensitive match).
@@ -122,6 +128,7 @@ def log_transaction(
     if original_currency != "INR":
         summary += f" | original currency: {original_currency}"
 
+    dry_run = _voice_dry_run(dry_run)
     if dry_run:
         return json.dumps({
             "status": "pending_confirmation",
@@ -178,7 +185,7 @@ def add_valuation(
     """
     Add a new valuation record for a portfolio company.
 
-    ALWAYS call with dry_run=True first to preview.
+    Use dry_run=True to preview, then dry_run=False to execute.
 
     Args:
         company_name: Company name (partial match).
@@ -206,6 +213,7 @@ def add_valuation(
     if mark_as_current:
         summary += " — and set as current company value"
 
+    dry_run = _voice_dry_run(dry_run)
     if dry_run:
         return json.dumps({"status": "pending_confirmation", "summary": summary,
                            "company": company["display_name"]})
@@ -277,7 +285,7 @@ def update_company(
     renaming display name, updating sector/sub-sector, portfolio type, asset class,
     country, date of first investment, currency, notes, or contact emails.
 
-    ALWAYS call dry_run=True first. Shows current vs proposed values.
+    Use dry_run=True to preview current vs proposed values.
 
     Args:
         company_name: Company name (partial match).
@@ -375,6 +383,7 @@ def update_company(
 
     summary = f"Update {company['display_name']}: {'; '.join(changes)}"
 
+    dry_run = _voice_dry_run(dry_run)
     if dry_run:
         return json.dumps({
             "status": "pending_confirmation",
@@ -427,7 +436,7 @@ def upsert_forex_rate(
     If a rate already exists for (effective_date, from_currency, to_currency)
     it is overwritten (upsert). Use when an analyst receives a new FX rate.
 
-    ALWAYS call dry_run=True first.
+    Use dry_run=True to preview, then dry_run=False to execute.
 
     Args:
         from_currency: Source currency ('AED', 'USD', 'EUR').
@@ -444,6 +453,7 @@ def upsert_forex_rate(
     if source:
         summary += f" (source: {source})"
 
+    dry_run = _voice_dry_run(dry_run)
     if dry_run:
         return json.dumps({"status": "pending_confirmation", "summary": summary})
 
@@ -487,7 +497,7 @@ def send_mis_reminder(
     primary_contact_email set. Standard reminder goes to primary_contact_email.
     Escalation goes to escalation_contact_email and CC's primary_contact_email.
 
-    ALWAYS call dry_run=True first. The dry-run shows exactly who will be emailed.
+    Use dry_run=True to preview exactly who will be emailed.
 
     Args:
         company_name: Company name (partial match).
@@ -546,6 +556,7 @@ def send_mis_reminder(
             f"email → {primary_email}"
         )
 
+    dry_run = _voice_dry_run(dry_run)
     if dry_run:
         return json.dumps({
             "status": "pending_confirmation",
@@ -605,7 +616,7 @@ def create_company(
     Only company_name is required. All other fields can be filled in later
     via update_company.
 
-    ALWAYS call dry_run=True first — this creates a new DB row.
+    Use dry_run=True to preview. Note: dry_run=False creates a new DB row.
 
     Args:
         company_name: Legal company name.
@@ -632,6 +643,7 @@ def create_company(
     if date_of_first_investment:
         summary += f" | first investment: {date_of_first_investment}"
 
+    dry_run = _voice_dry_run(dry_run)
     if dry_run:
         return json.dumps({"status": "pending_confirmation", "summary": summary})
 
@@ -684,7 +696,7 @@ def manage_reminder_schedule(
     """
     Create, update, or disable a MIS reminder schedule for a company.
 
-    ALWAYS call dry_run=True first.
+    Use dry_run=True to preview, then dry_run=False to execute.
 
     Args:
         company_name: Company name (partial match).
@@ -742,6 +754,7 @@ def manage_reminder_schedule(
             f"cadence → {cadence_days} days"
         )
 
+    dry_run = _voice_dry_run(dry_run)
     if dry_run:
         return json.dumps({"status": "pending_confirmation", "summary": summary})
 
@@ -810,7 +823,7 @@ def correct_transaction(
     WARNING: Deleting a transaction is permanent and cannot be undone.
     Updating amount_cr triggers a MOIC recomputation.
 
-    ALWAYS call dry_run=True first.
+    Use dry_run=True to preview, then dry_run=False to execute.
 
     Args:
         company_name: Company name (partial match).
@@ -873,6 +886,7 @@ def correct_transaction(
             f"for {company['display_name']} on {txn['transaction_date']}. "
             f"THIS CANNOT BE UNDONE."
         )
+        dry_run = _voice_dry_run(dry_run)
         if dry_run:
             return json.dumps({
                 "status": "pending_confirmation",
@@ -918,6 +932,7 @@ def correct_transaction(
         f"Update transaction ID {txn['id']} for {company['display_name']}: "
         f"{'; '.join(changes)}"
     )
+    dry_run = _voice_dry_run(dry_run)
     if dry_run:
         return json.dumps({"status": "pending_confirmation", "summary": summary})
 
@@ -974,7 +989,7 @@ def correct_mis_metric(
     Uses direct psycopg2 — the MIS router has no row-level PATCH endpoint.
     A timestamped audit note is appended to voice_call_logs automatically.
 
-    ALWAYS call dry_run=True first — shows current value vs proposed.
+    Use dry_run=True to preview current value vs proposed.
 
     Args:
         company_id: 'company_01' or 'company_02'.
@@ -1041,6 +1056,7 @@ def correct_mis_metric(
         f"{current_value} → {new_value} (in {table})"
     )
 
+    dry_run = _voice_dry_run(dry_run)
     if dry_run:
         return json.dumps({
             "status": "pending_confirmation",
@@ -1170,7 +1186,7 @@ def deactivate_company(
 
     This is REVERSIBLE: an admin can restore it via update_company or the UI.
 
-    ALWAYS call dry_run=True first — the summary shows the full position
+    Use dry_run=True to preview. The summary shows the full position
     (invested, current value, MOIC, transaction count) before you confirm.
 
     Args:
@@ -1220,6 +1236,7 @@ def deactivate_company(
     )
     summary = "\n".join(lines)
 
+    dry_run = _voice_dry_run(dry_run)
     if dry_run:
         return json.dumps({
             "status": "pending_confirmation",

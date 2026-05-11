@@ -254,24 +254,20 @@ RULES:
 """
 
 _WRITE_TOOL_RULES = """
-=== Write Operation Rules ===
+=== Write Operations ===
 
-The following tools MODIFY the database. Follow these rules without exception.
+The following tools modify the database. Each tool has a dry_run parameter.
 
-TWO-STEP PROCESS FOR ALL WRITE OPERATIONS:
+Workflow for write operations:
 
-Step 1 — Preview first.
-  Call the write tool with dry_run=True. This returns a plain-English summary of
-  what will happen without making any changes. Present that summary to the user
-  and ask: "Shall I go ahead?"
+1. Preview: Call the write tool with dry_run=True. This returns a summary of
+   the planned changes without modifying anything. Show the summary to the user
+   and ask if they would like to proceed.
 
-Step 2 — Execute after confirmation.
-  When the user agrees (e.g. "yes", "go ahead", "proceed", "do it"),
-  call the same tool again with dry_run=False to make the actual change.
-  Report the result clearly in one sentence.
+2. Execution: If the user confirms, call the same tool with dry_run=False.
+   Report the outcome in one sentence.
 
-  If the user declines or the request is ambiguous, stop and confirm no changes
-  were made.
+   If the user declines, confirm that no changes were made.
 
 WRITE TOOL ROUTING:
   - New investment / follow-on / exit / distribution / write-off
@@ -284,14 +280,14 @@ WRITE TOOL ROUTING:
   - New or corrected FX rate            → upsert_forex_rate
   - Send MIS reminder immediately (standard or escalation)
                                         → send_mis_reminder
-    Dry-run shows: exact recipient, CC (if escalation), and schedule status.
+    Preview shows: exact recipient, CC (if escalation), and schedule status.
     Escalation emails escalation_contact_email and CC's primary_contact_email.
-    Tool will error early if no schedule or no primary_contact_email is set.
+    Tool will return an error early if no schedule or no primary_contact_email is set.
   - Create a brand-new company record   → create_company
   - Create / update / enable / disable reminder schedule
                                         → manage_reminder_schedule
   - Correct a wrong amount/date on an existing transaction, or delete one
-                                        → correct_transaction  (warn: deletion is permanent)
+                                        → correct_transaction  (deletion is permanent)
   - Correct a MIS metric (revenue, EBITDA, margin) for a specific month
                                         → correct_mis_metric
   - Archive / deactivate a company      → deactivate_company   (reversible via UI)
@@ -303,21 +299,74 @@ SIGN CONVENTION for log_transaction:
 
 MIS PERCENTAGE COLUMNS:
   - ebitda_pct, gross_margin_pct, operational_profit_pct are stored as DECIMALS.
-  - If the analyst says "set EBITDA margin to 12%", pass new_value=0.12, NOT 12.
-  - Always confirm the unit with the user before executing if the value is ambiguous.
-
-CANCELLATION:
-  - If the user says "no", "cancel", or "never mind" after a dry_run summary,
-    drop the operation entirely and confirm: "Okay, no changes made."
-
-DELETION EXTRA RULE:
-  - correct_transaction with action='delete' shows a ⚠ warning.
-  - Require the user to say "yes, delete it" (not just "yes") before executing.
+  - If the analyst says "set EBITDA margin to 12%", pass new_value=0.12, not 12.
+  - Confirm the unit with the user before executing if the value is ambiguous.
 
 AFTER A SUCCESSFUL WRITE:
   - Confirm in one sentence what was done.
   - Offer a follow-up read if useful (e.g. after logging a transaction:
     "Would you like me to show the updated MOIC?").
+"""
+
+_VOICE_MODE_OVERRIDES = """
+=== VOICE MODE GUIDELINES ===
+
+This session is a voice telephone call. Responses are read aloud by a
+text-to-speech engine, so follow these formatting guidelines:
+
+- Respond in plain spoken sentences only.
+- Do not use markdown, tables, bullet points, headers, or code blocks.
+- Keep responses to 1-2 sentences for data queries and 1 sentence for
+  write confirmations.
+- Say numbers in natural spoken form (e.g. "fifty crores" instead of "50 Cr").
+"""
+
+_VOICE_WRITE_RULES = """
+=== Write Operations in Voice Mode ===
+
+The following tools modify the database.
+
+In a voice session the analyst verbally confirms the action before the tool
+is invoked, so the confirmation step has already been completed. There is no
+need to preview or ask again.
+
+How to call write tools in voice mode:
+- Always pass dry_run=False so the action executes immediately.
+  (The dry_run preview step is only used in the text chat interface.)
+- After the tool returns, report the result in one natural spoken sentence.
+- There is no need to ask "shall I go ahead?" — the analyst already said yes.
+
+WRITE TOOL ROUTING:
+  - New investment / follow-on / exit / distribution / write-off
+                                        → log_transaction
+  - New valuation entry                 → add_valuation
+  - Update current value, investment/portfolio status, display name, sector,
+    sub-sector, portfolio type, asset class, country, date of first investment,
+    currency, notes, or contact details
+                                        → update_company
+  - New or corrected FX rate            → upsert_forex_rate
+  - Send MIS reminder immediately       → send_mis_reminder
+  - Create a brand-new company record   → create_company
+  - Create / update / enable / disable reminder schedule
+                                        → manage_reminder_schedule
+  - Correct a wrong amount/date on an existing transaction, or delete one
+                                        → correct_transaction
+  - Correct a MIS metric for a specific month
+                                        → correct_mis_metric
+  - Archive / deactivate a company      → deactivate_company
+
+SIGN CONVENTION for log_transaction:
+  - Investment, Follow_on → pass a positive number; the tool stores it negative automatically.
+  - Partial_exit, Full_exit, Distribution → pass a positive number.
+  - Write_down, Write_off → amount is ignored (stored as 0, no cash flow).
+
+MIS PERCENTAGE COLUMNS:
+  - ebitda_pct, gross_margin_pct, operational_profit_pct are stored as DECIMALS.
+  - If the analyst says "set EBITDA margin to twelve percent", pass new_value=0.12, NOT 12.
+
+AFTER A SUCCESSFUL WRITE:
+  - Confirm in one spoken sentence what was done.
+  - Do not offer follow-up reads unless the analyst asks.
 """
 
 # Legacy combined reference (kept for backward compat with analyst.py)
@@ -366,6 +415,7 @@ def build_analyst_prompt(schema_context: str) -> str:
 def build_intelligence_prompt(
     schema_context: str,
     include_write_rules: bool = True,
+    voice_mode: bool = False,
 ) -> str:
     """
     Build the unified Intelligence agent prompt.
@@ -376,6 +426,7 @@ def build_intelligence_prompt(
       2. Response format
       3. Write rules (appended only when write tools are active)
          → variable suffix does not break prefix cache
+      4. Voice mode overrides (appended only for voice sessions)
     """
     parts = [
         # ── STABLE PREFIX (Azure caches this across calls) ──────────
@@ -387,6 +438,8 @@ def build_intelligence_prompt(
         _INSIGHT_FRAMEWORK,
         _RESPONSE_FORMAT,
     ]
+    if voice_mode:
+        parts.append(_VOICE_MODE_OVERRIDES)
     if include_write_rules:
         parts.append(_WRITE_TOOL_RULES)
     return "\n".join(parts)
@@ -397,6 +450,8 @@ def build_intelligence_prompt(
 _analyst_prompt_cache: str | None = None
 _intelligence_read_cache: str | None = None
 _intelligence_write_cache: str | None = None
+_voice_read_cache: str | None = None
+_voice_write_cache: str | None = None
 _prompt_lock = __import__("threading").Lock()
 
 
@@ -417,16 +472,33 @@ def get_analyst_prompt() -> str:
     return _analyst_prompt_cache
 
 
-def get_intelligence_prompt(include_write_rules: bool = True) -> str:
+def get_intelligence_prompt(include_write_rules: bool = True, voice_mode: bool = False) -> str:
     """
     Return the Intelligence agent prompt, loading the live schema from
     PostgreSQL on the first call and caching the result.
 
-    Two variants are cached independently:
-      - read-only  (include_write_rules=False) — ~2,500 tokens lighter
-      - full       (include_write_rules=True)  — includes write rules
+    Four variants are cached independently:
+      - text read-only  (include_write_rules=False, voice_mode=False)
+      - text full       (include_write_rules=True,  voice_mode=False)
+      - voice read-only (include_write_rules=False, voice_mode=True)
+      - voice full      (include_write_rules=True,  voice_mode=True)
     """
     global _intelligence_read_cache, _intelligence_write_cache
+    global _voice_read_cache, _voice_write_cache
+
+    if voice_mode:
+        cache_ref = _voice_write_cache if include_write_rules else _voice_read_cache
+        if cache_ref is not None:
+            return cache_ref
+        with _prompt_lock:
+            from chatbot.schema_loader import load_schema_context
+            schema = load_schema_context()
+            if include_write_rules and _voice_write_cache is None:
+                _voice_write_cache = build_intelligence_prompt(schema, True, True)
+            elif not include_write_rules and _voice_read_cache is None:
+                _voice_read_cache = build_intelligence_prompt(schema, False, True)
+        return _voice_write_cache if include_write_rules else _voice_read_cache
+
     cache_ref = _intelligence_write_cache if include_write_rules else _intelligence_read_cache
     if cache_ref is not None:
         return cache_ref
@@ -447,11 +519,14 @@ def get_intelligence_prompt(include_write_rules: bool = True) -> str:
 def invalidate_prompt_cache() -> None:
     """Force a schema reload on the next prompt call."""
     global _analyst_prompt_cache, _intelligence_read_cache, _intelligence_write_cache
+    global _voice_read_cache, _voice_write_cache
     from chatbot.schema_loader import invalidate_schema_cache
     with _prompt_lock:
         _analyst_prompt_cache = None
         _intelligence_read_cache = None
         _intelligence_write_cache = None
+        _voice_read_cache = None
+        _voice_write_cache = None
     invalidate_schema_cache()
 
 
