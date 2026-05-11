@@ -116,16 +116,16 @@ STEP 6 — REPLY with a one-paragraph summary of the dashboard contents and the 
   section heading to split them into logical groups.
 - Follow with a short text "Overview" block (type: "text") summarising key findings.
 - Group related charts: all Company_01 charts together, Company_02 together, portfolio-level separate.
-- Insert `{"type": "page_break"}` between major sections.
+- Insert `{{"type": "page_break"}}` between major sections.
 - Every chart must have a caption (1 sentence explaining what it shows).
 
 **`chart_row` usage rules — read carefully:**
 - ONLY use `chart_row` for small supplementary charts (pie, kpi-style bar, simple line).
 - NEVER use `chart_row` for: waterfall, scatter, stacked area, combo, or any chart with
-  many labels. These need full page width — use `{"type": "chart"}` instead.
+  many labels. These need full page width — use `{{"type": "chart"}}` instead.
 - Maximum 2 charts per `chart_row`.
 - If two company charts need comparing side by side and they are complex (waterfall,
-  combo, scatter), place them as separate full-width `{"type": "chart"}` sections
+  combo, scatter), place them as separate full-width `{{"type": "chart"}}` sections
   one after the other, NOT in a `chart_row`.
 
 ---
@@ -157,14 +157,14 @@ STEP 6 — REPLY with a one-paragraph summary of the dashboard contents and the 
 
 **Channel data for Company_02.**
 - Call `get_channel_breakdown` first. If ALL returned values are null/zero,
-  do not generate a channel chart — add a `{"type": "text"}` section noting
+  do not generate a channel chart — add a `{{"type": "text"}}` section noting
   "Channel-level data not available for this period."
 
 **Cost-mix stacked area charts.**
 - Before generating a cost-mix stacked area chart, check `get_cost_breakdown` output.
 - If manpower, rent, AND marketing are all null for every month, do NOT generate a
   stacked area chart (it will render as a blank or misleading "Other = 100%" line).
-- Instead add a `{"type": "text"}` section: heading "Cost Mix Unavailable",
+- Instead add a `{{"type": "text"}}` section: heading "Cost Mix Unavailable",
   body explaining which cost columns are missing for that company and period.
 
 ---
@@ -189,7 +189,7 @@ STEP 6 — REPLY with a one-paragraph summary of the dashboard contents and the 
 When generating `create_scatter_chart` for portfolio positioning:
   1. Call `calculate_irr` for each active company to get individual IRR values.
   2. Use `get_portfolio_aggregates(scope="TOTAL")` for avg MOIC baseline.
-  3. Set `quadrant_lines` to `{x: avg_irr_pct, y: avg_moic}` to divide the map.
+  3. Set `quadrant_lines` to `{{x: avg_irr_pct, y: avg_moic}}` to divide the map.
   4. Set `size` of each point proportional to invested capital (e.g. invested_cr * 5).
 
 ---
@@ -199,12 +199,12 @@ When generating `create_scatter_chart` for portfolio positioning:
 sections list elements:
 
 ```
-{"type": "kpi",        "chart_id": "portfolio_kpis"}
-{"type": "chart",      "chart_id": "sector_moic_bar", "caption": "..."}
-{"type": "chart_row",  "chart_ids": ["c01_combo", "c02_combo"], "captions": ["...", "..."]}
-{"type": "text",       "heading": "Portfolio Overview", "body": "2-3 sentence summary..."}
-{"type": "table",      "chart_id": "transaction_table", "caption": "..."}
-{"type": "page_break"}
+{{"type": "kpi",        "chart_id": "portfolio_kpis"}}
+{{"type": "chart",      "chart_id": "sector_moic_bar", "caption": "..."}}
+{{"type": "chart_row",  "chart_ids": ["c01_combo", "c02_combo"], "captions": ["...", "..."]}}
+{{"type": "text",       "heading": "Portfolio Overview", "body": "2-3 sentence summary..."}}
+{{"type": "table",      "chart_id": "transaction_table", "caption": "..."}}
+{{"type": "page_break"}}
 ```
 
 ---

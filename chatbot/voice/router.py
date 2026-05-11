@@ -33,7 +33,7 @@ from chatbot.config import (
     VAPI_SERVER_AUTH_DISABLED,
     VAPI_SHARED_SECRET,
 )
-from chatbot.context import reset_auth_token, set_auth_token
+from chatbot.context import reset_auth_token, set_auth_token, set_voice_mode
 from chatbot.voice.audit import (
     log_voice_call_end,
     log_voice_tool_call,
@@ -92,6 +92,7 @@ def _get_or_create_voice_agent(session_id: str, include_write: bool = False):
         agent = create_intelligence_agent(
             session_id=session_id,
             include_write_tools=include_write,
+            voice_mode=True,
         )
         _voice_agent_cache[session_id] = (agent, include_write)
         return agent
@@ -371,12 +372,15 @@ async def _tool_execute(args: dict, session: CallSession) -> str:
         # regardless of stale session history or model training data defaults.
         today = _date.today().isoformat()
         confirmed_query = (
-            f"[Today's date is {today}] "
-            f"The analyst said yes, go ahead. Complete this action: {query}"
+            f"[Today's date is {today}.] "
+            f"{query}"
         )
 
-        # Snapshot ContextVars (including _auth_token) so they are visible
-        # inside the thread-pool thread — identical pattern to server.py.
+        # Set voice mode so write tools auto-skip dry_run preview.
+        voice_reset = set_voice_mode(True)
+
+        # Snapshot ContextVars (including _auth_token and _voice_mode) so they
+        # are visible inside the thread-pool thread — identical pattern to server.py.
         ctx = contextvars.copy_context()
 
         # Run agent + compression together inside the thread pool.
@@ -402,6 +406,10 @@ async def _tool_execute(args: dict, session: CallSession) -> str:
 
     finally:
         reset_auth_token(token_reset)
+        try:
+            set_voice_mode(False)
+        except Exception:
+            pass
 
 
 # ── Call lifecycle ────────────────────────────────────────────────────────────
