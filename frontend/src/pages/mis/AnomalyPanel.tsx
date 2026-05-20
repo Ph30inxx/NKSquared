@@ -14,6 +14,7 @@ import { MisAnomaly, useMisAnomalies } from "../../api/mis";
 
 interface Props {
   submissionId: number;
+  hasFile: boolean;
 }
 
 const RULE_LABELS: Record<string, string> = {
@@ -83,8 +84,21 @@ function AnomalyRow({ a }: { a: MisAnomaly }) {
   );
 }
 
-export default function AnomalyPanel({ submissionId }: Props) {
-  const { data, isLoading, isError } = useMisAnomalies(submissionId);
+export default function AnomalyPanel({ submissionId, hasFile }: Props) {
+  const { data, isLoading, isError } = useMisAnomalies(hasFile ? submissionId : null);
+
+  if (!hasFile) {
+    return (
+      <Paper sx={{ p: 3 }}>
+        <Typography variant="h6" gutterBottom>
+          Anomalies
+        </Typography>
+        <Typography variant="body2" color="text.secondary">
+          Upload a file to run anomaly checks.
+        </Typography>
+      </Paper>
+    );
+  }
 
   if (isLoading) return null;
 

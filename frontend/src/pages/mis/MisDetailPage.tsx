@@ -209,7 +209,7 @@ export default function MisDetailPage() {
         <Alert severity="error">Rejection reason: {s.rejection_reason}</Alert>
       )}
 
-      {s.source_file_name && <AnomalyPanel submissionId={s.id} />}
+      <AnomalyPanel submissionId={s.id} hasFile={!!s.source_file_name} />
 
       <Paper sx={{ p: 3 }}>
         <Grid container spacing={3}>
